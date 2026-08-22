@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FreeSpace</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="app">
+      <!-- Drag region for title bar -->
+      <div id="titlebar" data-tauri-drag-region>
+        <div class="titlebar-content" data-tauri-drag-region>
+          <img src="/src/assets/app-icon.png" class="app-icon-img" alt="FreeSpace" />
+          <span class="app-title">FreeSpace</span>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <main id="main-content">
+
+        <!-- Disk Usage Card -->
+        <section id="disk-overview" class="glass-card">
+          <div class="disk-header">
+            <div class="disk-info">
+              <h2>💾 Disk Usage</h2>
+              <p id="disk-label" class="disk-label">Scanning...</p>
+            </div>
+            <div class="disk-ring-container">
+              <svg id="disk-ring" viewBox="0 0 120 120" class="disk-ring">
+                <circle class="ring-bg" cx="60" cy="60" r="52" />
+                <circle id="ring-progress" class="ring-progress" cx="60" cy="60" r="52" />
+              </svg>
+              <div id="disk-percent" class="disk-percent">--%</div>
+            </div>
+          </div>
+          <div class="disk-stats">
+            <div class="stat">
+              <span class="stat-dot used"></span>
+              <span class="stat-label">Used</span>
+              <span id="stat-used" class="stat-value">--</span>
+            </div>
+            <div class="stat">
+              <span class="stat-dot free"></span>
+              <span class="stat-label">Free</span>
+              <span id="stat-free" class="stat-value">--</span>
+            </div>
+            <div class="stat">
+              <span class="stat-dot total"></span>
+              <span class="stat-label">Total</span>
+              <span id="stat-total" class="stat-value">--</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Scan Button -->
+        <div id="scan-section" class="scan-section">
+          <button id="btn-scan" class="btn-scan">
+            <span class="scan-icon">🔍</span>
+            <span class="scan-text">Scan System</span>
+          </button>
+        </div>
+
+        <!-- Scanning Animation -->
+        <div id="scanning-overlay" class="scanning-overlay hidden">
+          <div class="scanning-content">
+            <div class="scanner-ring">
+              <div class="scanner-dot"></div>
+            </div>
+            <p class="scanning-text">Scanning your system...</p>
+            <p id="scanning-status" class="scanning-status">Analyzing directories</p>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="results hidden">
+          
+          <!-- Safe to Clean -->
+          <section class="results-section">
+            <div class="section-header">
+              <div class="section-title">
+                <span class="shield-icon safe">✅</span>
+                <h3>Safe to Clean</h3>
+              </div>
+              <div class="section-meta">
+                <span id="safe-total-size" class="total-size">0 B</span>
+                <button id="btn-select-all-safe" class="btn-select-all" title="Select All">Select All</button>
+              </div>
+            </div>
+            <div id="safe-items" class="items-list">
+              <!-- Populated dynamically -->
+            </div>
+          </section>
+
+          <!-- Needs Review -->
+          <section class="results-section review">
+            <div class="section-header">
+              <div class="section-title">
+                <span class="shield-icon review">⚠️</span>
+                <h3>Needs Review</h3>
+              </div>
+              <div class="section-meta">
+                <span id="review-total-size" class="total-size">0 B</span>
+                <button id="btn-select-all-review" class="btn-select-all" title="Select All">Select All</button>
+              </div>
+            </div>
+            <div id="review-items" class="items-list">
+              <!-- Populated dynamically -->
+            </div>
+          </section>
+        </div>
+
+        <!-- Bottom Action Bar -->
+        <div id="action-bar" class="action-bar hidden">
+          <div class="action-info">
+            <span id="selected-count">0 items selected</span>
+            <span id="selected-size" class="selected-size">0 B</span>
+          </div>
+          <button id="btn-clean" class="btn-clean" disabled>
+            <span>🧹</span>
+            <span id="btn-clean-text">Clean Selected</span>
+          </button>
+        </div>
+
+      </main>
+
+      <!-- Toast Container -->
+      <div id="toast-container" class="toast-container"></div>
+    </div>
+  </body>
+</html>
