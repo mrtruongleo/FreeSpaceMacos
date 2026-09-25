@@ -12,6 +12,19 @@ pub enum SafetyLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubCleanupItem {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub file_count: u64,
+    pub is_dir: bool,
+    pub has_children: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub children: Option<Vec<SubCleanupItem>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupItem {
     pub id: String,
     pub name: String,
@@ -23,6 +36,7 @@ pub struct CleanupItem {
     pub description: String,
     pub file_count: u64,
     pub exists: bool,
+    pub children: Vec<SubCleanupItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +74,11 @@ fn get_dir_size(path: &Path) -> (u64, u64) {
         return (0, 0);
     }
 
+    if path.is_file() {
+        let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+        return (size, 1);
+    }
+
     for entry in WalkDir::new(path)
         .max_depth(10)
         .into_iter()
@@ -85,6 +104,61 @@ fn expand_home(path_str: &str) -> PathBuf {
     PathBuf::from(path_str)
 }
 
+fn scan_children_direct(path: &Path) -> Vec<SubCleanupItem> {
+    if !path.exists() || !path.is_dir() {
+        return Vec::new();
+    }
+
+    let Ok(entries) = fs::read_dir(path) else {
+        return Vec::new();
+    };
+
+    let mut items: Vec<SubCleanupItem> = Vec::new();
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let entry_path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        if file_name == ".DS_Store" || file_name == ".localized" {
+            continue;
+        }
+
+        let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+        let (size, file_count) = if is_dir {
+            get_dir_size(&entry_path)
+        } else {
+            let s = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            (s, 1)
+        };
+
+        if size == 0 && file_count == 0 {
+            continue;
+        }
+
+        let has_children = if is_dir {
+            fs::read_dir(&entry_path)
+                .map(|mut r| r.next().is_some())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        items.push(SubCleanupItem {
+            id: entry_path.to_string_lossy().to_string(),
+            name: file_name,
+            path: entry_path.to_string_lossy().to_string(),
+            size,
+            file_count,
+            is_dir,
+            has_children,
+            children: None,
+        });
+    }
+
+    items.sort_by(|a, b| b.size.cmp(&a.size));
+    items
+}
+
 fn scan_location(
     id: &str,
     name: &str,
@@ -102,6 +176,12 @@ fn scan_location(
         (0, 0)
     };
 
+    let children = if exists && path.is_dir() {
+        scan_children_direct(&path)
+    } else {
+        Vec::new()
+    };
+
     CleanupItem {
         id: id.to_string(),
         name: name.to_string(),
@@ -113,6 +193,88 @@ fn scan_location(
         description: description.to_string(),
         file_count,
         exists,
+        children,
+    }
+}
+
+fn is_category_root(path_str: &str) -> bool {
+    let roots = [
+        "/Library/Caches",
+        "/Library/Logs",
+        "/.Trash",
+        "/Library/Developer/Xcode/DerivedData",
+        "/Library/Developer/Xcode/Archives",
+        "/Library/Developer/CoreSimulator/Devices",
+        "/Downloads",
+        "/.npm/_cacache",
+        "/.gradle/caches",
+        "/Library/Application Support/CrashReporter",
+    ];
+    roots.iter().any(|r| path_str.ends_with(r))
+}
+
+fn delete_dir_contents_resilient(path: &Path) -> (u64, u32, Option<String>) {
+    let mut freed_bytes: u64 = 0;
+    let mut deleted_count: u32 = 0;
+    let mut last_err = None;
+
+    let entries = match fs::read_dir(path) {
+        Ok(e) => e,
+        Err(e) => return (0, 0, Some(e.to_string())),
+    };
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let entry_path = entry.path();
+        if let Ok(file_type) = entry.file_type() {
+            if file_type.is_dir() {
+                let (sub_size, sub_files) = get_dir_size(&entry_path);
+                if fs::remove_dir_all(&entry_path).is_ok() {
+                    freed_bytes += sub_size;
+                    deleted_count += sub_files.max(1) as u32;
+                } else {
+                    let (f, c, err) = delete_dir_contents_resilient(&entry_path);
+                    freed_bytes += f;
+                    deleted_count += c;
+                    if err.is_some() {
+                        last_err = err;
+                    }
+                    let _ = fs::remove_dir(&entry_path);
+                }
+            } else {
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if fs::remove_file(&entry_path).is_ok() {
+                    freed_bytes += size;
+                    deleted_count += 1;
+                }
+            }
+        }
+    }
+
+    (freed_bytes, deleted_count, last_err)
+}
+
+fn delete_target(path: &Path) -> (u64, u32, Option<String>) {
+    let path_str = path.to_string_lossy();
+    if is_category_root(&path_str) {
+        delete_dir_contents_resilient(path)
+    } else if path.is_file() || path.is_symlink() {
+        let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+        if fs::remove_file(path).is_ok() {
+            (size, 1, None)
+        } else {
+            (0, 0, Some(format!("Could not remove file: {}", path_str)))
+        }
+    } else if path.is_dir() {
+        let (size, files) = get_dir_size(path);
+        if fs::remove_dir_all(path).is_ok() {
+            (size, files.max(1) as u32, None)
+        } else {
+            let (freed, count, err) = delete_dir_contents_resilient(path);
+            let _ = fs::remove_dir(path);
+            (freed, count, err)
+        }
+    } else {
+        (0, 0, None)
     }
 }
 
@@ -120,7 +282,6 @@ fn scan_location(
 
 #[tauri::command]
 fn get_disk_usage() -> Result<DiskUsage, String> {
-    // Use statvfs on macOS to get disk usage for the root filesystem
     #[cfg(target_os = "macos")]
     {
         use std::ffi::CString;
@@ -150,6 +311,15 @@ fn get_disk_usage() -> Result<DiskUsage, String> {
     }
     
     Err("Could not get disk usage".to_string())
+}
+
+#[tauri::command]
+async fn scan_sub_items(path: String) -> Result<Vec<SubCleanupItem>, String> {
+    let p = expand_home(&path);
+    if !p.exists() {
+        return Ok(Vec::new());
+    }
+    Ok(scan_children_direct(&p))
 }
 
 #[tauri::command]
@@ -361,27 +531,11 @@ async fn delete_items(paths: Vec<String>) -> Result<DeleteResult, String> {
             continue;
         }
 
-        // Calculate size before deleting
-        let (size, _) = get_dir_size(&path);
-
-        // For the Trash folder, permanently delete contents
-        if path_str.contains(".Trash") {
-            match delete_dir_contents(&path) {
-                Ok(count) => {
-                    deleted_count += count;
-                    freed_bytes += size;
-                }
-                Err(e) => errors.push(format!("{}: {}", path_str, e)),
-            }
-        } else {
-            // For other items, delete the contents of the directory but keep the dir
-            match delete_dir_contents(&path) {
-                Ok(count) => {
-                    deleted_count += count;
-                    freed_bytes += size;
-                }
-                Err(e) => errors.push(format!("{}: {}", path_str, e)),
-            }
+        let (freed, count, err) = delete_target(&path);
+        freed_bytes += freed;
+        deleted_count += count;
+        if let Some(e) = err {
+            errors.push(format!("{}: {}", path_str, e));
         }
     }
 
@@ -393,35 +547,6 @@ async fn delete_items(paths: Vec<String>) -> Result<DeleteResult, String> {
     })
 }
 
-fn delete_dir_contents(path: &Path) -> Result<u32, String> {
-    let mut count: u32 = 0;
-    
-    if !path.is_dir() {
-        let _ = fs::remove_file(path);
-        return Ok(1);
-    }
-
-    let entries: Vec<_> = fs::read_dir(path)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok())
-        .collect();
-
-    for entry in entries {
-        let entry_path = entry.path();
-        if entry_path.is_dir() {
-            if fs::remove_dir_all(&entry_path).is_ok() {
-                count += 1;
-            }
-        } else {
-            if fs::remove_file(&entry_path).is_ok() {
-                count += 1;
-            }
-        }
-    }
-
-    Ok(count)
-}
-
 // ─── App Entry ─────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -431,6 +556,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_disk_usage,
             scan_system,
+            scan_sub_items,
             delete_items,
         ])
         .run(tauri::generate_context!())
