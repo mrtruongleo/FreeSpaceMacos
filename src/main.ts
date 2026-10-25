@@ -22,6 +22,7 @@ interface CleanupItem {
   icon: string;
   safety_level: "Safe" | "NeedsReview";
   description: string;
+  safety_tip: string;
   file_count: number;
   exists: boolean;
   children: SubCleanupItem[];
@@ -59,6 +60,7 @@ interface TreeNode {
   has_children: boolean;
   icon?: string;
   description?: string;
+  safety_tip?: string;
   safety_level: "Safe" | "NeedsReview";
   is_top_level: boolean;
   parent: TreeNode | null;
@@ -139,7 +141,10 @@ function showConfirmCleanupDialog(details: ConfirmDetails): Promise<boolean> {
     if (details.safeItems.length > 0) {
       const safeTotal = details.safeItems.reduce((acc, i) => acc + i.size, 0);
       safeSectionHtml = `
-        <div class="dialog-group-title safe">✅ Safe to Clean (${formatBytes(safeTotal)})</div>
+        <div class="dialog-group-title safe">
+          <span class="dialog-group-badge safe">✅ Safe to Clean (${formatBytes(safeTotal)})</span>
+          <span class="dialog-group-sub">🟢 An toàn 100%: Dữ liệu cache & tạm thời, hệ thống tự tái tạo khi cần, không mất dữ liệu.</span>
+        </div>
         ${details.safeItems
           .map(
             (i) => `
@@ -156,7 +161,10 @@ function showConfirmCleanupDialog(details: ConfirmDetails): Promise<boolean> {
     if (details.reviewItems.length > 0) {
       const reviewTotal = details.reviewItems.reduce((acc, i) => acc + i.size, 0);
       reviewSectionHtml = `
-        <div class="dialog-group-title review">⚠️ Needs Review (${formatBytes(reviewTotal)})</div>
+        <div class="dialog-group-title review">
+          <span class="dialog-group-badge review">⚠️ Needs Review (${formatBytes(reviewTotal)})</span>
+          <span class="dialog-group-sub">🟡 Cần xem xét: Build artifacts, máy ảo Simulator, Downloads, Model AI... Tải/build lại khi dùng.</span>
+        </div>
         ${details.reviewItems
           .map(
             (i) => `
@@ -172,10 +180,13 @@ function showConfirmCleanupDialog(details: ConfirmDetails): Promise<boolean> {
     const warningHtml =
       details.reviewItems.length > 0
         ? `<div class="dialog-warning-note">
-             <span>⚠️</span>
-             <div>Some selected items require review (e.g. build artifacts, simulator devices). They will be rebuilt or re-downloaded when next needed.</div>
+             <span class="dialog-warning-icon">⚠️</span>
+             <div>Một số mục đã chọn thuộc diện <strong>Cần xem xét</strong> (build artifacts, máy ảo Simulator, Downloads, Model AI). Bạn có thể mở rộng danh sách ở màn hình chính để bỏ chọn các file quan trọng trước khi xóa.</div>
            </div>`
-        : "";
+        : `<div class="dialog-safe-note">
+             <span>🛡️</span>
+             <div>Tất cả mục đã chọn đều là <strong>100% An toàn</strong>. Bạn có thể yên tâm dọn dẹp để giải phóng bộ nhớ ngay lập tức.</div>
+           </div>`;
 
     overlay.innerHTML = `
       <div class="dialog">
@@ -618,13 +629,21 @@ function createTopLevelItemElement(node: TreeNode): HTMLElement {
        </button>`
     : `<span class="tree-chevron hidden-placeholder"></span>`;
 
+  const isSafe = node.safety_level === "Safe";
+  const badgeClass = isSafe ? "safe" : "review";
+  const badgeText = isSafe ? "🟢 100% An toàn" : "🟡 Cần xem xét";
+
   row.innerHTML = `
     ${chevronHtml}
     <div class="item-checkbox ${node.selected ? "checked" : ""} ${node.indeterminate ? "indeterminate" : ""}" data-node-id="${node.id}"></div>
     <div class="item-icon">${node.icon || "📦"}</div>
     <div class="item-info">
-      <div class="item-name">${node.name}</div>
+      <div class="item-name-row">
+        <span class="item-name">${node.name}</span>
+        <span class="item-safety-badge ${badgeClass}">${badgeText}</span>
+      </div>
       <div class="item-desc" title="${node.description} (${node.path})">${node.description}</div>
+      ${node.safety_tip ? `<div class="item-safety-tip">${node.safety_tip}</div>` : ""}
     </div>
     <div class="item-meta">
       <div class="item-size">${formatBytes(node.size)}</div>
@@ -692,6 +711,7 @@ function renderResults(result: ScanResult) {
       file_count: item.file_count,
       icon: item.icon,
       description: item.description,
+      safety_tip: item.safety_tip,
       safety_level: item.safety_level,
       is_top_level: true,
       is_dir: true,
@@ -735,6 +755,7 @@ function renderResults(result: ScanResult) {
       file_count: item.file_count,
       icon: item.icon,
       description: item.description,
+      safety_tip: item.safety_tip,
       safety_level: item.safety_level,
       is_top_level: true,
       is_dir: true,

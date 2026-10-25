@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FreeSpace</title>
+    <title>FreeSpace - macOS Storage Optimizer</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
@@ -15,6 +15,7 @@
         <div class="titlebar-content" data-tauri-drag-region>
           <img src="/src/assets/app-icon.png" class="app-icon-img" alt="FreeSpace" />
           <span class="app-title">FreeSpace</span>
+          <span class="app-badge">macOS Cleaner</span>
         </div>
       </div>
 
@@ -25,8 +26,8 @@
         <section id="disk-overview" class="glass-card">
           <div class="disk-header">
             <div class="disk-info">
-              <h2>💾 Disk Usage</h2>
-              <p id="disk-label" class="disk-label">Scanning...</p>
+              <h2>💾 Dung lượng ổ đĩa (Disk Usage)</h2>
+              <p id="disk-label" class="disk-label">Đang kiểm tra ổ đĩa...</p>
             </div>
             <div class="disk-ring-container">
               <svg id="disk-ring" viewBox="0 0 120 120" class="disk-ring">
@@ -39,17 +40,17 @@
           <div class="disk-stats">
             <div class="stat">
               <span class="stat-dot used"></span>
-              <span class="stat-label">Used</span>
+              <span class="stat-label">Đã dùng (Used)</span>
               <span id="stat-used" class="stat-value">--</span>
             </div>
             <div class="stat">
               <span class="stat-dot free"></span>
-              <span class="stat-label">Free</span>
+              <span class="stat-label">Còn trống (Free)</span>
               <span id="stat-free" class="stat-value">--</span>
             </div>
             <div class="stat">
               <span class="stat-dot total"></span>
-              <span class="stat-label">Total</span>
+              <span class="stat-label">Tổng dung lượng</span>
               <span id="stat-total" class="stat-value">--</span>
             </div>
           </div>
@@ -59,7 +60,7 @@
         <div id="scan-section" class="scan-section">
           <button id="btn-scan" class="btn-scan">
             <span class="scan-icon">🔍</span>
-            <span class="scan-text">Scan System</span>
+            <span class="scan-text">Quét hệ thống (Scan System)</span>
           </button>
         </div>
 
@@ -69,8 +70,8 @@
             <div class="scanner-ring">
               <div class="scanner-dot"></div>
             </div>
-            <p class="scanning-text">Scanning your system...</p>
-            <p id="scanning-status" class="scanning-status">Analyzing directories</p>
+            <p class="scanning-text">Đang phân tích sâu bộ nhớ Mac...</p>
+            <p id="scanning-status" class="scanning-status">Đang kiểm tra các thư mục hệ thống & cache</p>
           </div>
         </div>
 
@@ -82,11 +83,14 @@
             <div class="section-header">
               <div class="section-title">
                 <span class="shield-icon safe">✅</span>
-                <h3>Safe to Clean</h3>
+                <div class="section-title-text">
+                  <h3>Safe to Clean (An toàn 100%)</h3>
+                  <p class="section-subtitle">Dữ liệu bộ nhớ đệm tạm thời (Caches, Logs, Trash, Xcode IB). Ứng dụng & hệ thống sẽ tự động tạo lại khi cần, hoàn toàn không mất dữ liệu hay tài khoản.</p>
+                </div>
               </div>
               <div class="section-meta">
                 <span id="safe-total-size" class="total-size">0 B</span>
-                <button id="btn-select-all-safe" class="btn-select-all" title="Select All">Select All</button>
+                <button id="btn-select-all-safe" class="btn-select-all" title="Chọn / Bỏ chọn tất cả">Select All</button>
               </div>
             </div>
             <div id="safe-items" class="items-list">
@@ -99,11 +103,14 @@
             <div class="section-header">
               <div class="section-title">
                 <span class="shield-icon review">⚠️</span>
-                <h3>Needs Review</h3>
+                <div class="section-title-text">
+                  <h3>Needs Review (Cần xem xét)</h3>
+                  <p class="section-subtitle">Chứa các tệp có thể giải phóng dung lượng cực lớn (DeviceSupport Symbols, máy ảo Simulator, AI models, Downloads...). Bạn có thể mở rộng mũi tên để chọn chi tiết từng file muốn xóa.</p>
+                </div>
               </div>
               <div class="section-meta">
                 <span id="review-total-size" class="total-size">0 B</span>
-                <button id="btn-select-all-review" class="btn-select-all" title="Select All">Select All</button>
+                <button id="btn-select-all-review" class="btn-select-all" title="Chọn / Bỏ chọn tất cả">Select All</button>
               </div>
             </div>
             <div id="review-items" class="items-list">
@@ -115,12 +122,12 @@
         <!-- Bottom Action Bar -->
         <div id="action-bar" class="action-bar hidden">
           <div class="action-info">
-            <span id="selected-count">0 items selected</span>
+            <span id="selected-count">0 mục đã chọn</span>
             <span id="selected-size" class="selected-size">0 B</span>
           </div>
           <button id="btn-clean" class="btn-clean" disabled>
             <span>🧹</span>
-            <span id="btn-clean-text">Clean Selected</span>
+            <span id="btn-clean-text">Dọn dẹp các mục đã chọn</span>
           </button>
         </div>
 

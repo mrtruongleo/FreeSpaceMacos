@@ -1186,3 +1186,112 @@ body {
     align-items: flex-start;
   }
 }
+
+/* ─── Safety Badges & Explanations ─── */
+.app-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  margin-left: 8px;
+}
+
+.section-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.section-title-text h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.section-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 3px 0 0 0;
+  line-height: 1.35;
+  font-weight: 400;
+}
+
+.item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.item-safety-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1.5px 7px;
+  border-radius: 10px;
+  letter-spacing: 0.2px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.item-safety-badge.safe {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.item-safety-badge.review {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.item-safety-tip {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+  line-height: 1.35;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  border-left: 2.5px solid rgba(255, 255, 255, 0.1);
+}
+
+.results-section.review .item-safety-tip {
+  border-left-color: rgba(245, 158, 11, 0.5);
+}
+
+.results-section:not(.review) .item-safety-tip {
+  border-left-color: rgba(34, 197, 94, 0.5);
+}
+
+.dialog-group-badge {
+  font-weight: 700;
+}
+
+.dialog-group-sub {
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--text-muted);
+  margin-top: 2px;
+  text-transform: none;
+  display: block;
+}
+
+.dialog-safe-note {
+  font-size: 11px;
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

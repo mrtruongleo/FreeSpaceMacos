@@ -34,6 +34,7 @@ pub struct CleanupItem {
     pub icon: String,
     pub safety_level: SafetyLevel,
     pub description: String,
+    pub safety_tip: String,
     pub file_count: u64,
     pub exists: bool,
     pub children: Vec<SubCleanupItem>,
@@ -167,6 +168,7 @@ fn scan_location(
     icon: &str,
     safety_level: SafetyLevel,
     description: &str,
+    safety_tip: &str,
 ) -> CleanupItem {
     let path = expand_home(path_str);
     let exists = path.exists();
@@ -191,6 +193,7 @@ fn scan_location(
         icon: icon.to_string(),
         safety_level,
         description: description.to_string(),
+        safety_tip: safety_tip.to_string(),
         file_count,
         exists,
         children,
@@ -206,9 +209,28 @@ fn is_category_root(path_str: &str) -> bool {
         "/Library/Developer/Xcode/Archives",
         "/Library/Developer/CoreSimulator/Devices",
         "/Downloads",
+        "/.npm",
         "/.npm/_cacache",
         "/.gradle/caches",
         "/Library/Application Support/CrashReporter",
+        "/Library/Developer/Xcode/UserData/IB Support",
+        "/Library/Developer/Xcode/UserData/IB%20Support",
+        "/Library/Developer/Xcode/iOS DeviceSupport",
+        "/Library/Developer/Xcode/DocumentationCache",
+        "/.cache/uv",
+        "/.cache/huggingface",
+        "/.cache/profileforge",
+        "/.cache/solana",
+        "/.cargo/registry/cache",
+        "/Library/Caches/Google",
+        "/Library/Caches/pip",
+        "/Library/Caches/Homebrew",
+        "/Library/Caches/dev.kiro.desktop.ShipIt",
+        "/Library/Caches/com.github.GitHubClient.ShipIt",
+        "/Library/Caches/dotslash",
+        "/.meteor/packages",
+        "/Library/Application Support/Code/Cache",
+        "/Library/Application Support/Zed/Cache",
     ];
     roots.iter().any(|r| path_str.ends_with(r))
 }
@@ -289,11 +311,11 @@ fn get_disk_usage() -> Result<DiskUsage, String> {
 
         let path = CString::new("/").map_err(|e| e.to_string())?;
         unsafe {
-            let mut stat: libc::statvfs = mem::zeroed();
-            if libc::statvfs(path.as_ptr(), &mut stat) == 0 {
-                let block_size = stat.f_frsize as u64;
-                let total = stat.f_blocks as u64 * block_size;
-                let free = stat.f_bavail as u64 * block_size;
+            let mut stat: libc::statfs = mem::zeroed();
+            if libc::statfs(path.as_ptr(), &mut stat) == 0 {
+                let block_size = stat.f_bsize as u64;
+                let total = stat.f_blocks * block_size;
+                let free = stat.f_bavail * block_size;
                 let used = total - free;
                 let percentage_used = if total > 0 {
                     (used as f64 / total as f64) * 100.0
@@ -331,7 +353,7 @@ async fn scan_system() -> Result<ScanResult, String> {
         percentage_used: 0.0,
     });
 
-    // ── Safe to delete items ──
+    // ── Safe to delete items (100% An toàn - Tự động tái tạo khi cần) ──
     let safe_items: Vec<CleanupItem> = vec![
         scan_location(
             "user_caches",
@@ -340,7 +362,48 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Caches",
             "📦",
             SafetyLevel::Safe,
-            "Application cache files. Apps will recreate them when needed.",
+            "Bộ nhớ đệm ứng dụng. Ứng dụng sẽ tự động tạo lại tệp đệm khi khởi chạy.",
+            "🟢 100% An toàn. Không mất dữ liệu cá nhân hay tài khoản, hệ thống & app tự tạo lại khi cần.",
+        ),
+        scan_location(
+            "xcode_ib_support",
+            "Xcode Interface Builder Cache",
+            "~/Library/Developer/Xcode/UserData/IB Support",
+            "Developer",
+            "🎨",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm render trực quan Storyboard/XIB của Xcode (thường phình to 10 - 30 GB).",
+            "🟢 100% An toàn. Xcode tự sinh lại cache render khi mở project, không ảnh hưởng code hay build.",
+        ),
+        scan_location(
+            "uv_cache",
+            "Python uv Package Cache",
+            "~/.cache/uv",
+            "Developer",
+            "⚡",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm tải về các gói thư viện Python của công cụ uv.",
+            "🟢 100% An toàn. Các môi trường venv đã cài đặt vẫn nguyên vẹn. uv sẽ tự tải lại khi install gói mới.",
+        ),
+        scan_location(
+            "chrome_cache",
+            "Google Chrome Cache",
+            "~/Library/Caches/Google",
+            "Browser",
+            "🌐",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm web và hình ảnh của Google Chrome.",
+            "🟢 100% An toàn. Không làm mất bookmark, mật khẩu đã lưu hay phiên đăng nhập.",
+        ),
+        scan_location(
+            "safari_cache",
+            "Safari Cache",
+            "~/Library/Caches/com.apple.Safari",
+            "Browser",
+            "🧭",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm duyệt web của Safari.",
+            "🟢 100% An toàn. Safari sẽ tự tạo lại khi bạn lướt web, không ảnh hưởng mật khẩu hay lịch sử.",
         ),
         scan_location(
             "app_logs",
@@ -349,7 +412,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Logs",
             "📋",
             SafetyLevel::Safe,
-            "App log files. Generally not needed unless debugging.",
+            "Tệp ghi nhật ký hoạt động cũ của các ứng dụng.",
+            "🟢 100% An toàn. Chỉ dùng khi lập trình viên cần xem lại lỗi cũ, hoàn toàn không cần cho app chạy bình thường.",
         ),
         scan_location(
             "crash_reports",
@@ -358,33 +422,106 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Logs",
             "💥",
             SafetyLevel::Safe,
-            "Old crash report data. Safe to remove if not debugging.",
+            "Dữ liệu báo cáo sự cố (crash dump) cũ của macOS.",
+            "🟢 100% An toàn. Là các báo cáo sau khi app văng, an toàn xóa bỏ để lấy lại dung lượng.",
         ),
         scan_location(
             "trash",
-            "Trash",
+            "Trash Bin",
             "~/.Trash",
             "Trash",
             "🗑️",
             SafetyLevel::Safe,
-            "Files in your Trash bin. Permanently delete to reclaim space.",
+            "Tệp trong Thùng rác chưa được dọn vĩnh viễn.",
+            "🟢 An toàn để dọn sạch hoàn toàn các tệp bạn đã chủ động xóa vào Thùng rác.",
         ),
         scan_location(
-            "safari_cache",
-            "Safari Cache",
-            "~/Library/Caches/com.apple.Safari",
-            "Browser",
-            "🌐",
+            "xcode_doc_cache",
+            "Xcode Documentation Cache",
+            "~/Library/Developer/Xcode/DocumentationCache",
+            "Developer",
+            "📚",
             SafetyLevel::Safe,
-            "Safari browser cache. Will be rebuilt as you browse.",
+            "Bộ nhớ đệm tài liệu lập trình offline của Xcode.",
+            "🟢 100% An toàn. Xcode sẽ tự động tải lại khi bạn tra cứu tài liệu mới.",
+        ),
+        scan_location(
+            "npm_cache",
+            "npm Package Cache",
+            "~/.npm",
+            "Developer",
+            "📦",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm gói Node.js npm tải từ registry.",
+            "🟢 100% An toàn. npm sẽ tự động tải lại gói khi bạn chạy lệnh npm install.",
+        ),
+        scan_location(
+            "cargo_cache",
+            "Cargo Registry Cache",
+            "~/.cargo/registry/cache",
+            "Developer",
+            "🦀",
+            SafetyLevel::Safe,
+            "Tệp nén .crate đã tải về của Rust Cargo.",
+            "🟢 100% An toàn. Mã nguồn crate đã giải nén trong project vẫn nguyên vẹn. Cargo tự tải lại khi cập nhật.",
+        ),
+        scan_location(
+            "pip_cache",
+            "pip Download Cache",
+            "~/Library/Caches/pip",
+            "Developer",
+            "🐍",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm tải gói của Python pip.",
+            "🟢 100% An toàn. Thư viện Python đã cài đặt trong máy không bị ảnh hưởng.",
+        ),
+        scan_location(
+            "app_shipit_cache",
+            "Desktop App Update Cache",
+            "~/Library/Caches/dev.kiro.desktop.ShipIt",
+            "Apps",
+            "🚀",
+            SafetyLevel::Safe,
+            "Tệp cài đặt cập nhật cũ của Kiro Desktop và Electron apps.",
+            "🟢 100% An toàn. Ứng dụng đã được cập nhật thành công, bộ cài tải về cũ không còn tác dụng.",
+        ),
+        scan_location(
+            "dotslash_cache",
+            "DotSlash & CLI Cache",
+            "~/Library/Caches/dotslash",
+            "Developer",
+            "⚙️",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm thực thi của công cụ DotSlash.",
+            "🟢 100% An toàn. Sẽ tự động tải lại binary khi cần chạy script.",
+        ),
+        scan_location(
+            "solana_cache",
+            "Solana CLI Cache",
+            "~/.cache/solana",
+            "Developer",
+            "🪙",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm ledger và công cụ Solana CLI.",
+            "🟢 100% An toàn. Không làm mất private key hay tài khoản ví.",
         ),
     ]
     .into_iter()
     .filter(|item| item.exists && item.size > 0)
     .collect();
 
-    // ── Needs review items ──
+    // ── Needs review items (Cần xem xét - Tải/Build lại khi dùng) ──
     let review_items: Vec<CleanupItem> = vec![
+        scan_location(
+            "ios_device_support",
+            "iOS DeviceSupport Symbols",
+            "~/Library/Developer/Xcode/iOS DeviceSupport",
+            "Developer",
+            "📱",
+            SafetyLevel::NeedsReview,
+            "File biểu tượng gỡ lỗi (.symbols) của các iPhone đã cắm vào máy Mac (thường 10 - 30 GB).",
+            "🟡 Cần xem xét: KHÔNG ảnh hưởng build app hay chạy bot Farm. Xcode chỉ dùng khi soi crash Instruments (Xcode sẽ tự trích xuất lại khi cắm máy).",
+        ),
         scan_location(
             "xcode_derived",
             "Xcode DerivedData",
@@ -392,7 +529,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Developer",
             "🔨",
             SafetyLevel::NeedsReview,
-            "Xcode build artifacts. Can be rebuilt but may slow down builds.",
+            "Tệp build trung gian và chỉ mục mã nguồn của Xcode.",
+            "🟡 Cần xem xét: Dự án sẽ build lại từ đầu ở lần mở tiếp theo (mất thêm vài phút biên dịch).",
         ),
         scan_location(
             "xcode_archives",
@@ -401,25 +539,38 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Developer",
             "📁",
             SafetyLevel::NeedsReview,
-            "Archived builds. Remove old ones you no longer need.",
+            "Các bản đóng gói ứng dụng (.xcarchive) đã xuất bản trước đây.",
+            "🟡 Cần xem xét: Hãy mở rộng để chọn xóa các bản build cũ mà bạn không còn cần phân phối lên App Store.",
         ),
         scan_location(
             "ios_simulators",
-            "iOS Simulators",
+            "iOS Simulators Data",
             "~/Library/Developer/CoreSimulator/Devices",
             "Developer",
-            "📱",
+            "📲",
             SafetyLevel::NeedsReview,
-            "iOS Simulator data. Can be re-downloaded from Xcode.",
+            "Dữ liệu ứng dụng và cache trong các máy ảo iOS Simulator.",
+            "🟡 Cần xem xét: Xóa sẽ đặt lại máy ảo về mặc định xuất xưởng. Mở rộng để xóa từng máy ảo cụ thể.",
         ),
         scan_location(
-            "npm_cache",
-            "npm Cache",
-            "~/.npm/_cacache",
-            "Developer",
-            "📦",
+            "huggingface_cache",
+            "HuggingFace AI Models",
+            "~/.cache/huggingface",
+            "AI & Data",
+            "🤗",
             SafetyLevel::NeedsReview,
-            "npm package cache. Will be rebuilt on next install.",
+            "Trọng số model AI đã tải từ HuggingFace Hub (thường nhiều GB).",
+            "🟡 Cần xem xét: Code AI hoặc script Python sẽ cần tải lại model (qua internet) nếu bạn chạy lại tác vụ đó.",
+        ),
+        scan_location(
+            "profileforge_cache",
+            "ProfileForge Cache",
+            "~/.cache/profileforge",
+            "Developer",
+            "👤",
+            SafetyLevel::NeedsReview,
+            "Dữ liệu hồ sơ giả lập của ProfileForge.",
+            "🟡 Cần xem xét: Xóa sẽ làm mất các profile thử nghiệm tạm thời của ProfileForge.",
         ),
         scan_location(
             "yarn_cache",
@@ -428,7 +579,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Developer",
             "🧶",
             SafetyLevel::NeedsReview,
-            "Yarn package cache. Can be rebuilt with yarn install.",
+            "Bộ nhớ đệm gói của Yarn. Có thể tải lại qua yarn install.",
+            "🟡 Cần xem xét: Sẽ tải lại từ internet khi bạn chạy yarn install.",
         ),
         scan_location(
             "cocoapods_cache",
@@ -437,7 +589,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Developer",
             "🫛",
             SafetyLevel::NeedsReview,
-            "CocoaPods dependency cache. Will re-download on pod install.",
+            "Bộ nhớ đệm thư viện CocoaPods cho iOS.",
+            "🟡 Cần xem xét: Sẽ tải lại khi bạn chạy pod install.",
         ),
         scan_location(
             "gradle_cache",
@@ -446,7 +599,18 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Developer",
             "🐘",
             SafetyLevel::NeedsReview,
-            "Gradle build cache for Android/Java projects.",
+            "Bộ nhớ đệm build của Gradle cho các dự án Android/Java.",
+            "🟡 Cần xem xét: Lần build Android tiếp theo sẽ cần tải lại dependencies.",
+        ),
+        scan_location(
+            "meteor_packages",
+            "Meteor Framework Packages",
+            "~/.meteor/packages",
+            "Developer",
+            "☄️",
+            SafetyLevel::NeedsReview,
+            "Các package của framework MeteorJS cũ cài đặt trước đây.",
+            "🟡 Cần xem xét: Nếu bạn không còn chạy dự án Meteor nào thì hoàn toàn nên xóa để giải phóng dung lượng.",
         ),
         scan_location(
             "docker_data",
@@ -455,7 +619,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Apps",
             "🐳",
             SafetyLevel::NeedsReview,
-            "Docker images, containers, and volumes. Review before deleting.",
+            "Dữ liệu images, containers và volumes của Docker.",
+            "🟡 Cần xem xét: Xóa sẽ mất các container cục bộ và image đã build trong Docker.",
         ),
         scan_location(
             "vscode_cache",
@@ -464,25 +629,18 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Apps",
             "💻",
             SafetyLevel::NeedsReview,
-            "VS Code editor cache files.",
+            "Bộ nhớ đệm giao diện và tệp tạm của VS Code.",
+            "🟡 Cần xem xét: Trình soạn thảo sẽ tự sinh lại cache mới, không làm mất extension hay cài đặt.",
         ),
         scan_location(
             "spotify_cache",
-            "Spotify Cache",
+            "Spotify Offline Cache",
             "~/Library/Application Support/Spotify/PersistentCache",
             "Apps",
             "🎵",
             SafetyLevel::NeedsReview,
-            "Spotify offline music cache.",
-        ),
-        scan_location(
-            "pip_cache",
-            "pip Cache",
-            "~/Library/Caches/pip",
-            "Developer",
-            "🐍",
-            SafetyLevel::NeedsReview,
-            "Python pip download cache.",
+            "Bộ nhớ đệm bài hát nghe gần đây hoặc tải offline trên Spotify.",
+            "🟡 Cần xem xét: Không mất tài khoản hay playlist, chỉ cần tải lại bài hát khi muốn nghe offline.",
         ),
         scan_location(
             "homebrew_cache",
@@ -491,7 +649,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "Developer",
             "🍺",
             SafetyLevel::NeedsReview,
-            "Homebrew downloaded packages. Run 'brew cleanup' instead for better control.",
+            "Gói cài đặt đã tải về của Homebrew.",
+            "🟡 Cần xem xét: Các phần mềm brew đã cài không bị ảnh hưởng. Bạn có thể xóa an toàn.",
         ),
         scan_location(
             "old_downloads",
@@ -500,7 +659,8 @@ async fn scan_system() -> Result<ScanResult, String> {
             "User Data",
             "⬇️",
             SafetyLevel::NeedsReview,
-            "Your Downloads folder. Review files before deleting.",
+            "Thư mục Tải về cá nhân (file cài .dmg, .pkg, .zip...).",
+            "🟡 Cần xem xét: Hãy mở rộng thư mục để chọn đúng các bộ cài cũ bạn muốn xóa, tránh xóa nhầm tài liệu quan trọng!",
         ),
     ]
     .into_iter()
