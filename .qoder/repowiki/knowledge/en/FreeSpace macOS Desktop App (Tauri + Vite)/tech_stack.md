@@ -1,0 +1,1 @@
+Tauri v2 (Rust backend + `@tauri-apps/api` v2) paired with Vite 6 as the frontend bundler; TypeScript 5.6 compiled in bundler mode against ES2020 DOM targets.

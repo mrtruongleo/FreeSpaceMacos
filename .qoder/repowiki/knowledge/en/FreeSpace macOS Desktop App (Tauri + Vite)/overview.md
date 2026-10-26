@@ -1,0 +1,1 @@
+Root of the FreeSpace macOS disk-cleanup desktop app, wiring a TypeScript/Vite frontend to a Rust Tauri v2 backend via @tauri-apps/api commands.

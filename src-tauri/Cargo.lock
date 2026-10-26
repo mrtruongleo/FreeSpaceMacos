@@ -1061,6 +1061,7 @@ dependencies = [
  "tauri-plugin-opener",
  "trash",
  "walkdir",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

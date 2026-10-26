@@ -50,6 +50,18 @@ interface DeleteResult {
   errors: string[];
 }
 
+interface PlatformInfo {
+  os: string;
+  os_name: string;
+  disk_label: string;
+}
+
+interface LargeFile {
+  name: string;
+  path: string;
+  size: number;
+}
+
 interface TreeNode {
   id: string;
   name: string;
@@ -85,6 +97,17 @@ let reviewNodes: TreeNode[] = [];
 let isScanning = false;
 let isDeleting = false;
 
+// Platform state (auto-detected at startup; macOS is the default fallback)
+let platformOs = "unknown";
+let diskLabel = "Macintosh HD";
+
+// ─── Tab / Size-Tree / Large-Files State ───────────────────────
+type TabId = "cleanup" | "tree" | "files";
+let treeLoaded = false;
+let treeLoading = false;
+let filesLoaded = false;
+let filesLoading = false;
+
 // ─── Format Utilities ──────────────────────────────────────────
 
 function formatBytes(bytes: number, decimals = 1): string {
@@ -104,6 +127,7 @@ function getFileIcon(name: string): string {
   if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp") || lower.endsWith(".icns")) return "🖼️";
   if (lower.endsWith(".db") || lower.endsWith(".sqlite") || lower.endsWith(".sql")) return "🗄️";
   if (lower.endsWith(".app") || lower.endsWith(".framework") || lower.endsWith(".dylib")) return "📦";
+  if (lower.endsWith(".exe") || lower.endsWith(".dll") || lower.endsWith(".msi")) return "📦";
   return "📄";
 }
 
@@ -243,7 +267,7 @@ function updateDiskUsageUI(usage: DiskUsage) {
 
   const pct = Math.min(100, Math.max(0, usage.percentage_used));
 
-  if (labelEl) labelEl.textContent = `Macintosh HD · ${formatBytes(usage.free)} Available`;
+  if (labelEl) labelEl.textContent = `${diskLabel} · ${formatBytes(usage.free)} Available`;
   if (percentEl) percentEl.textContent = `${pct.toFixed(0)}%`;
   if (statUsedEl) statUsedEl.textContent = formatBytes(usage.used);
   if (statFreeEl) statFreeEl.textContent = formatBytes(usage.free);
@@ -840,12 +864,20 @@ async function runScan() {
   if (resultsContainer) resultsContainer.classList.add("hidden");
   if (scanOverlay) scanOverlay.classList.remove("hidden");
 
-  const statusTexts = [
-    "Analyzing User & System Caches...",
-    "Scanning Developer caches & archives...",
-    "Checking Log files & Crash reports...",
-    "Calculating directory sizes...",
-  ];
+  const statusTexts =
+    platformOs === "windows"
+      ? [
+          "Analyzing User & Windows Temp files...",
+          "Scanning Browser & Developer caches...",
+          "Checking Error reports & Update cache...",
+          "Calculating directory sizes...",
+        ]
+      : [
+          "Analyzing User & System Caches...",
+          "Scanning Developer caches & archives...",
+          "Checking Log files & Crash reports...",
+          "Calculating directory sizes...",
+        ];
   let statusIndex = 0;
   const interval = setInterval(() => {
     if (scanningStatus) {
@@ -921,9 +953,256 @@ async function runClean() {
   }
 }
 
+// ─── Tab Switching ─────────────────────────────────────────────
+
+function switchTab(tab: TabId) {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", (btn as HTMLElement).dataset.tab === tab);
+  });
+  const panels: Record<TabId, string> = {
+    cleanup: "tab-cleanup",
+    tree: "tab-tree",
+    files: "tab-files",
+  };
+  (Object.keys(panels) as TabId[]).forEach((key) => {
+    const el = document.getElementById(panels[key]);
+    if (el) el.classList.toggle("hidden", key !== tab);
+  });
+
+  // Lazy-init heavy tabs on first visit
+  if (tab === "tree" && !treeLoaded && !treeLoading) {
+    initSizeTree();
+  }
+  if (tab === "files" && !filesLoaded && !filesLoading) {
+    runLargeFileScan();
+  }
+}
+
+// ─── Size-Sorted Directory Tree ────────────────────────────────
+
+async function initSizeTree() {
+  const container = document.getElementById("tree-container");
+  const status = document.getElementById("tree-status");
+  const btn = document.getElementById("btn-tree-refresh") as HTMLButtonElement | null;
+  if (!container) return;
+
+  treeLoading = true;
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = "Đang quét dung lượng thư mục Home... (đây có thể mất chút thời gian)";
+  container.innerHTML = `
+    <div class="tree-loading" style="padding:20px">
+      <div class="tree-spinner"></div>
+      <span>Đang tính kích thước thư mục...</span>
+    </div>
+  `;
+
+  try {
+    const root = await invoke<SubCleanupItem>("get_tree_root");
+    container.innerHTML = "";
+    const maxRef = { size: root.size > 0 ? root.size : 1 };
+    container.appendChild(buildSizeTreeNode(root, maxRef, true));
+    treeLoaded = true;
+    if (status) {
+      status.textContent = `Home · ${formatBytes(root.size)} · ${root.file_count.toLocaleString()} tệp. Nhấn mũi tên để mở rộng (tải dần).`;
+    }
+  } catch (err) {
+    console.error("Tree load error:", err);
+    container.innerHTML = `<div class="tree-empty" style="padding:20px">Lỗi tải cây thư mục: ${err}</div>`;
+    if (status) status.textContent = "Không thể tải cây thư mục.";
+  } finally {
+    treeLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function buildSizeTreeNode(item: SubCleanupItem, maxRef: { size: number }, isRoot = false): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "tree-sub-node-wrapper";
+
+  const row = document.createElement("div");
+  row.className = "tree-sub-item";
+
+  const canExpand = item.is_dir && item.has_children;
+  const chevronHtml = canExpand
+    ? `<button class="tree-chevron" title="Mở rộng">
+         <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+       </button>`
+    : `<span class="tree-chevron hidden-placeholder"></span>`;
+
+  const icon = item.is_dir ? "📁" : getFileIcon(item.name);
+  const pct = maxRef.size > 0 ? Math.max(2, Math.min(100, Math.round((item.size / maxRef.size) * 100))) : 0;
+  const barClass = pct >= 60 ? "st-bar top" : "st-bar";
+
+  row.innerHTML = `
+    ${chevronHtml}
+    <div class="sub-item-icon">${icon}</div>
+    <div class="sub-item-info">
+      <div class="sub-item-name" title="${item.name}">${item.name}</div>
+      <div class="sub-item-path" title="${item.path}">${item.path}</div>
+    </div>
+    <div class="st-bar-wrap"><div class="${barClass}" style="width:${pct}%"></div></div>
+    <div class="sub-item-meta">
+      <div class="sub-item-size">${formatBytes(item.size)}</div>
+      <div class="sub-item-files">${item.is_dir && item.file_count > 0 ? `${item.file_count.toLocaleString()} files` : ""}</div>
+    </div>
+  `;
+
+  wrapper.appendChild(row);
+
+  if (canExpand) {
+    const childrenContainer = document.createElement("div");
+    childrenContainer.className = "tree-children collapsed";
+    wrapper.appendChild(childrenContainer);
+
+    let loaded = false;
+    let expanded = false;
+    const toggle = async () => {
+      expanded = !expanded;
+      const chev = row.querySelector(".tree-chevron");
+      if (chev) chev.classList.toggle("expanded", expanded);
+      childrenContainer.classList.toggle("collapsed", !expanded);
+
+      if (expanded && !loaded) {
+        loaded = true;
+        childrenContainer.innerHTML = `
+          <div class="tree-loading">
+            <div class="tree-spinner"></div>
+            <span>Đang tải...</span>
+          </div>`;
+        try {
+          const children = await invoke<SubCleanupItem[]>("scan_sub_items", { path: item.path });
+          childrenContainer.innerHTML = "";
+          if (children.length === 0) {
+            loaded = false;
+            childrenContainer.innerHTML = `<div class="tree-empty"><span>Trống</span></div>`;
+          } else {
+            // Size bar relative to the largest sibling in this folder
+            const siblingMax = { size: children[0]?.size ?? 1 };
+            for (const child of children) {
+              childrenContainer.appendChild(buildSizeTreeNode(child, siblingMax));
+            }
+          }
+        } catch (err) {
+          loaded = false;
+          childrenContainer.innerHTML = `<div class="tree-empty"><span>Lỗi tải: ${err}</span></div>`;
+        }
+      }
+    };
+
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".tree-chevron")) return;
+      toggle();
+    });
+    row.querySelector(".tree-chevron")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle();
+    });
+
+    if (isRoot) {
+      // Auto-expand the root level for immediate overview
+      toggle();
+    }
+  }
+
+  return wrapper;
+}
+
+// ─── Large Files ───────────────────────────────────────────────
+
+async function runLargeFileScan() {
+  const container = document.getElementById("files-container");
+  const status = document.getElementById("files-status");
+  const btn = document.getElementById("btn-scan-files") as HTMLButtonElement | null;
+  const sizeSel = document.getElementById("file-min-size") as HTMLSelectElement | null;
+  if (!container) return;
+
+  const minSizeMb = sizeSel ? parseInt(sizeSel.value, 10) || 100 : 100;
+
+  filesLoading = true;
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = `Đang quét các tệp ≥ ${minSizeMb} MB trong Home... (có thể mất chút thời gian)`;
+  container.innerHTML = `
+    <div class="tree-loading" style="padding:20px">
+      <div class="tree-spinner"></div>
+      <span>Đang tìm các tệp lớn...</span>
+    </div>
+  `;
+
+  try {
+    const files = await invoke<LargeFile[]>("scan_large_files", { minSizeMb, limit: 200 });
+    container.innerHTML = "";
+    if (files.length === 0) {
+      container.innerHTML = `<div class="files-empty">Không tìm thấy tệp nào ≥ ${minSizeMb} MB.</div>`;
+    } else {
+      const revealLabel = platformOs === "windows" ? "Explorer" : "Finder";
+      files.forEach((f, idx) => {
+        container.appendChild(buildLargeFileRow(f, idx + 1, revealLabel));
+      });
+    }
+    filesLoaded = true;
+    if (status) status.textContent = `Tìm thấy ${files.length} tệp ≥ ${minSizeMb} MB (sắp xếp lớn → nhỏ).`;
+  } catch (err) {
+    console.error("Large files scan error:", err);
+    container.innerHTML = `<div class="files-empty">Lỗi quét tệp lớn: ${err}</div>`;
+    if (status) status.textContent = "Không thể quét tệp lớn.";
+  } finally {
+    filesLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function buildLargeFileRow(f: LargeFile, rank: number, revealLabel: string): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "lf-row";
+  const dir = f.path.replace(/[\\/][^\\/]*[\\/]?$/, "") || f.path;
+  row.innerHTML = `
+    <span class="lf-rank">${rank}</span>
+    <span class="lf-icon">${getFileIcon(f.name)}</span>
+    <div class="lf-info">
+      <div class="lf-name" title="${f.name}">${f.name}</div>
+      <div class="lf-path" title="${f.path}">${dir}</div>
+    </div>
+    <span class="lf-size">${formatBytes(f.size)}</span>
+    <button class="reveal-btn" title="Hiển thị trong ${revealLabel}">📂 Reveal</button>
+  `;
+  row.querySelector(".reveal-btn")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const btnEl = e.currentTarget as HTMLElement;
+    btnEl.textContent = "...";
+    try {
+      await invoke("reveal_path", { path: f.path });
+    } catch (err) {
+      console.error("Reveal error:", err);
+      showToast(`Không hiển thị được: ${err}`, "error");
+    } finally {
+      btnEl.innerHTML = `📂 Reveal`;
+    }
+  });
+  return row;
+}
+
 // ─── Initial Load & Event Listeners ────────────────────────────
 
 window.addEventListener("DOMContentLoaded", async () => {
+  // Auto-detect platform (macOS / Windows) and adapt labels & copy
+  try {
+    const info = await invoke<PlatformInfo>("get_platform_info");
+    platformOs = info.os;
+    diskLabel = info.disk_label;
+
+    const badgeEl = document.getElementById("app-badge");
+    if (badgeEl) {
+      badgeEl.textContent = info.os === "windows" ? "Windows Cleaner" : "macOS Cleaner";
+    }
+
+    const scanningTextEl = document.getElementById("scanning-text");
+    if (scanningTextEl && info.os === "windows") {
+      scanningTextEl.textContent = "Đang phân tích sâu ổ đĩa hệ thống Windows...";
+    }
+  } catch (err) {
+    console.error("Platform info error:", err);
+  }
+
   try {
     const initialDisk = await invoke<DiskUsage>("get_disk_usage");
     updateDiskUsageUI(initialDisk);
@@ -967,4 +1246,22 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Auto trigger initial scan on startup
   runScan();
+
+  // Tab switching
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const t = (btn as HTMLElement).dataset.tab as TabId | undefined;
+      if (t) switchTab(t);
+    });
+  });
+
+  // Size-tree refresh
+  document.getElementById("btn-tree-refresh")?.addEventListener("click", () => {
+    initSizeTree();
+  });
+
+  // Large-files scan
+  document.getElementById("btn-scan-files")?.addEventListener("click", () => {
+    runLargeFileScan();
+  });
 });

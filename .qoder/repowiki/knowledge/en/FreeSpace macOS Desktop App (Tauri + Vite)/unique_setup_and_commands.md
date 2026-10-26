@@ -1,0 +1,1 @@
+`npm run tauri dev` starts both the Vite dev server (port 1420) and the Rust backend; `npm run build` runs `tsc && vite build` to produce the Tauri bundle; `npm run preview` serves the built frontend locally.

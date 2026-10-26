@@ -65,6 +65,13 @@ pub struct DeleteResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LargeFile {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+}
+
 // ─── Helper Functions ──────────────────────────────────────────
 
 fn get_dir_size(path: &Path) -> (u64, u64) {
@@ -201,38 +208,61 @@ fn scan_location(
 }
 
 fn is_category_root(path_str: &str) -> bool {
+    // Normalize path separators and case so the same rules work on both
+    // macOS ("/Users/.../Library/...") and Windows ("C:\\Users\\...").
+    let normalized = path_str.replace('\\', "/").to_lowercase();
     let roots = [
-        "/Library/Caches",
-        "/Library/Logs",
-        "/.Trash",
-        "/Library/Developer/Xcode/DerivedData",
-        "/Library/Developer/Xcode/Archives",
-        "/Library/Developer/CoreSimulator/Devices",
-        "/Downloads",
+        // ── macOS roots ──
+        "/library/caches",
+        "/library/logs",
+        "/.trash",
+        "/library/developer/xcode/deriveddata",
+        "/library/developer/xcode/archives",
+        "/library/developer/coresimulator/devices",
+        "/downloads",
         "/.npm",
         "/.npm/_cacache",
         "/.gradle/caches",
-        "/Library/Application Support/CrashReporter",
-        "/Library/Developer/Xcode/UserData/IB Support",
-        "/Library/Developer/Xcode/UserData/IB%20Support",
-        "/Library/Developer/Xcode/iOS DeviceSupport",
-        "/Library/Developer/Xcode/DocumentationCache",
+        "/library/application support/crashreporter",
+        "/library/developer/xcode/userdata/ib support",
+        "/library/developer/xcode/userdata/ib%20support",
+        "/library/developer/xcode/ios devicesupport",
+        "/library/developer/xcode/documentationcache",
         "/.cache/uv",
         "/.cache/huggingface",
         "/.cache/profileforge",
         "/.cache/solana",
         "/.cargo/registry/cache",
-        "/Library/Caches/Google",
-        "/Library/Caches/pip",
-        "/Library/Caches/Homebrew",
-        "/Library/Caches/dev.kiro.desktop.ShipIt",
-        "/Library/Caches/com.github.GitHubClient.ShipIt",
-        "/Library/Caches/dotslash",
+        "/library/caches/google",
+        "/library/caches/pip",
+        "/library/caches/homebrew",
+        "/library/caches/dev.kiro.desktop.shipit",
+        "/library/caches/com.github.githubclient.shipit",
+        "/library/caches/dotslash",
         "/.meteor/packages",
-        "/Library/Application Support/Code/Cache",
-        "/Library/Application Support/Zed/Cache",
+        "/library/application support/code/cache",
+        "/library/application support/zed/cache",
+        // ── Windows roots ──
+        "/appdata/local/temp",
+        "/windows/temp",
+        "/appdata/local/microsoft/windows/inetcache",
+        "/appdata/local/microsoft/windows/wer",
+        "/appdata/local/crashdumps",
+        "/appdata/local/d3dscache",
+        "/appdata/local/npm-cache",
+        "/appdata/local/pip/cache",
+        "/appdata/local/uv/cache",
+        "/appdata/local/google/chrome/user data/default/cache",
+        "/appdata/local/microsoft/edge/user data/default/cache",
+        "/appdata/roaming/code/cache",
+        "/appdata/roaming/spotify/storage",
+        "/appdata/local/yarn/cache",
+        "/appdata/local/docker",
+        "/.nuget/packages",
+        "/$recycle.bin",
+        "/windows/softwaredistribution/download",
     ];
-    roots.iter().any(|r| path_str.ends_with(r))
+    roots.iter().any(|r| normalized.ends_with(r))
 }
 
 fn delete_dir_contents_resilient(path: &Path) -> (u64, u32, Option<String>) {
@@ -332,6 +362,46 @@ fn get_disk_usage() -> Result<DiskUsage, String> {
         }
     }
     
+    #[cfg(target_os = "windows")]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+        let root: Vec<u16> = OsStr::new(&format!("{}\\", drive))
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut total_bytes: u64 = 0;
+        let mut available_bytes: u64 = 0;
+        let mut total_free_bytes: u64 = 0;
+
+        unsafe {
+            let ok = windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                root.as_ptr(),
+                &mut available_bytes,
+                &mut total_bytes,
+                &mut total_free_bytes,
+            );
+            if ok != 0 {
+                let total = total_bytes;
+                let free = available_bytes;
+                let used = total - free;
+                let percentage_used = if total > 0 {
+                    (used as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                return Ok(DiskUsage {
+                    total,
+                    used,
+                    free,
+                    percentage_used,
+                });
+            }
+        }
+    }
+
     Err("Could not get disk usage".to_string())
 }
 
@@ -344,7 +414,109 @@ async fn scan_sub_items(path: String) -> Result<Vec<SubCleanupItem>, String> {
     Ok(scan_children_direct(&p))
 }
 
+/// Root node for the size-sorted directory tree (the user's home folder).
 #[tauri::command]
+async fn get_tree_root() -> Result<SubCleanupItem, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
+    let (size, file_count) = get_dir_size(&home);
+    let name = home
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Home".to_string());
+    Ok(SubCleanupItem {
+        id: home.to_string_lossy().to_string(),
+        name,
+        path: home.to_string_lossy().to_string(),
+        size,
+        file_count,
+        is_dir: true,
+        has_children: true,
+        children: None,
+    })
+}
+
+/// Scan the home directory for the largest individual files.
+#[tauri::command]
+async fn scan_large_files(min_size_mb: u64, limit: usize) -> Result<Vec<LargeFile>, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
+    let min_bytes = min_size_mb.saturating_mul(1024 * 1024);
+    let limit = if limit == 0 { 200 } else { limit };
+
+    let mut files: Vec<LargeFile> = Vec::new();
+
+    for entry in WalkDir::new(&home)
+        .max_depth(24)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            // Skip hidden dotfiles/dirs and the recycle bin to avoid noise.
+            let name = e.file_name().to_string_lossy();
+            if e.depth() > 0 && name.starts_with('.') {
+                return false;
+            }
+            if name == "$RECYCLE.BIN" || name == "System Volume Information" {
+                return false;
+            }
+            true
+        })
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        if size < min_bytes {
+            continue;
+        }
+        files.push(LargeFile {
+            name: entry.file_name().to_string_lossy().to_string(),
+            path: entry.path().to_string_lossy().to_string(),
+            size,
+        });
+    }
+
+    files.sort_by(|a, b| b.size.cmp(&a.size));
+    files.truncate(limit);
+    Ok(files)
+}
+
+/// Reveal a file/folder in the native file manager (Finder / Explorer).
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    let p = expand_home(&path);
+    if !p.exists() {
+        return Err("Path does not exist".to_string());
+    }
+    let target = p.to_string_lossy().to_string();
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", target))
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = target;
+        Err("Reveal is not supported on this platform".to_string())
+    }
+}
+
+#[tauri::command]
+#[cfg(target_os = "macos")]
 async fn scan_system() -> Result<ScanResult, String> {
     let disk_usage = get_disk_usage().unwrap_or(DiskUsage {
         total: 0,
@@ -679,6 +851,316 @@ async fn scan_system() -> Result<ScanResult, String> {
     })
 }
 
+// ─── Platform Auto-Detection ──────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformInfo {
+    pub os: String,
+    pub os_name: String,
+    pub disk_label: String,
+}
+
+#[cfg(target_os = "macos")]
+fn platform_info() -> PlatformInfo {
+    PlatformInfo {
+        os: "macos".to_string(),
+        os_name: "macOS".to_string(),
+        disk_label: "Macintosh HD".to_string(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn platform_info() -> PlatformInfo {
+    let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+    PlatformInfo {
+        os: "windows".to_string(),
+        os_name: "Windows".to_string(),
+        disk_label: format!("Local Disk ({})", drive),
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn platform_info() -> PlatformInfo {
+    PlatformInfo {
+        os: std::env::consts::OS.to_string(),
+        os_name: std::env::consts::OS.to_string(),
+        disk_label: "Disk".to_string(),
+    }
+}
+
+#[tauri::command]
+fn get_platform_info() -> PlatformInfo {
+    platform_info()
+}
+
+// ─── Windows Scan (Tự động nhận diện máy Windows) ──────────────
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+async fn scan_system() -> Result<ScanResult, String> {
+    let disk_usage = get_disk_usage().unwrap_or(DiskUsage {
+        total: 0,
+        used: 0,
+        free: 0,
+        percentage_used: 0.0,
+    });
+
+    // ── Safe to delete items (Windows - 100% An toàn - Tự động tái tạo khi cần) ──
+    let safe_items: Vec<CleanupItem> = vec![
+        scan_location(
+            "user_temp",
+            "User Temp Files",
+            "~/AppData/Local/Temp",
+            "Caches",
+            "🧹",
+            SafetyLevel::Safe,
+            "Tệp tạm thời do các ứng dụng và Windows tạo ra trong thư mục Temp của người dùng.",
+            "🟢 100% An toàn. Ứng dụng tự tạo lại tệp tạm khi cần, không mất dữ liệu cá nhân.",
+        ),
+        scan_location(
+            "windows_temp",
+            "Windows System Temp",
+            "C:/Windows/Temp",
+            "Caches",
+            "🧹",
+            SafetyLevel::Safe,
+            "Tệp tạm thời của hệ thống Windows (thư mục Temp toàn cục).",
+            "🟢 100% An toàn. Windows tự tạo lại khi cần. Một số tệp đang khóa có thể cần quyền Admin.",
+        ),
+        scan_location(
+            "chrome_cache",
+            "Google Chrome Cache",
+            "~/AppData/Local/Google/Chrome/User Data/Default/Cache",
+            "Browser",
+            "🌐",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm web và hình ảnh của Google Chrome.",
+            "🟢 100% An toàn. Không làm mất bookmark, mật khẩu đã lưu hay phiên đăng nhập.",
+        ),
+        scan_location(
+            "edge_cache",
+            "Microsoft Edge Cache",
+            "~/AppData/Local/Microsoft/Edge/User Data/Default/Cache",
+            "Browser",
+            "🌐",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm web và hình ảnh của Microsoft Edge.",
+            "🟢 100% An toàn. Không làm mất bookmark, mật khẩu đã lưu hay phiên đăng nhập.",
+        ),
+        scan_location(
+            "inet_cache",
+            "Windows INetCache",
+            "~/AppData/Local/Microsoft/Windows/INetCache",
+            "Browser",
+            "🌐",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm HTTP của các thành phần hệ thống và ứng dụng Windows.",
+            "🟢 100% An toàn. Hệ thống tự tạo lại tệp đệm khi cần.",
+        ),
+        scan_location(
+            "d3dscache",
+            "DirectX Shader Cache",
+            "~/AppData/Local/D3DSCache",
+            "Caches",
+            "🎮",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm shader của DirectX dùng cho game và ứng dụng đồ họa.",
+            "🟢 100% An toàn. Game/ứng dụng sẽ biên dịch lại shader khi chạy (chậm hơn lần đầu).",
+        ),
+        scan_location(
+            "wer_reports",
+            "Windows Error Reports",
+            "~/AppData/Local/Microsoft/Windows/WER",
+            "Logs",
+            "💥",
+            SafetyLevel::Safe,
+            "Báo cáo lỗi (Error Reporting) mà Windows thu thập sau sự cố ứng dụng.",
+            "🟢 100% An toàn. Chỉ là báo cáo gửi về Microsoft, không ảnh hưởng hệ thống.",
+        ),
+        scan_location(
+            "crash_dumps",
+            "User Crash Dumps",
+            "~/AppData/Local/CrashDumps",
+            "Logs",
+            "💥",
+            SafetyLevel::Safe,
+            "Tệp dump bộ nhớ (crash dump) của ứng dụng bị văng.",
+            "🟢 100% An toàn. Chỉ dùng để phân tích lỗi cũ, xóa bỏ hoàn toàn an toàn.",
+        ),
+        scan_location(
+            "npm_cache",
+            "npm Package Cache",
+            "~/AppData/Local/npm-cache",
+            "Developer",
+            "📦",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm gói Node.js npm tải từ registry.",
+            "🟢 100% An toàn. npm sẽ tự động tải lại gói khi bạn chạy npm install.",
+        ),
+        scan_location(
+            "pip_cache",
+            "pip Download Cache",
+            "~/AppData/Local/pip/cache",
+            "Developer",
+            "🐍",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm tải gói của Python pip.",
+            "🟢 100% An toàn. Thư viện Python đã cài đặt trong máy không bị ảnh hưởng.",
+        ),
+        scan_location(
+            "uv_cache",
+            "Python uv Package Cache",
+            "~/AppData/Local/uv/cache",
+            "Developer",
+            "⚡",
+            SafetyLevel::Safe,
+            "Bộ nhớ đệm tải về các gói thư viện Python của công cụ uv.",
+            "🟢 100% An toàn. Các môi trường venv đã cài đặt vẫn nguyên vẹn. uv sẽ tự tải lại khi cài gói mới.",
+        ),
+        scan_location(
+            "cargo_cache",
+            "Cargo Registry Cache",
+            "~/.cargo/registry/cache",
+            "Developer",
+            "🦀",
+            SafetyLevel::Safe,
+            "Tệp nén .crate đã tải về của Rust Cargo.",
+            "🟢 100% An toàn. Mã nguồn crate đã giải nén trong project vẫn nguyên vẹn. Cargo tự tải lại khi cập nhật.",
+        ),
+    ]
+    .into_iter()
+    .filter(|item| item.exists && item.size > 0)
+    .collect();
+
+    // ── Needs review items (Windows - Cần xem xét - Tải/Build lại khi dùng) ──
+    let review_items: Vec<CleanupItem> = vec![
+        scan_location(
+            "downloads",
+            "Downloads Folder",
+            "~/Downloads",
+            "User Data",
+            "⬇️",
+            SafetyLevel::NeedsReview,
+            "Thư mục Tải về cá nhân (file cài .exe, .msi, .zip...).",
+            "🟡 Cần xem xét: Hãy mở rộng thư mục để chọn đúng các bộ cài cũ bạn muốn xóa, tránh xóa nhầm tài liệu quan trọng!",
+        ),
+        scan_location(
+            "recycle_bin",
+            "Recycle Bin (Thùng rác)",
+            "C:/$Recycle.Bin",
+            "Trash",
+            "🗑️",
+            SafetyLevel::NeedsReview,
+            "Tệp đã xóa trong Thùng rác của ổ đĩa hệ thống C:.",
+            "🟡 Cần xem xét: Dọn sạch sẽ xóa vĩnh viễn toàn bộ nội dung Thùng rác. Có thể cần quyền Admin.",
+        ),
+        scan_location(
+            "windows_update_cache",
+            "Windows Update Download Cache",
+            "C:/Windows/SoftwareDistribution/Download",
+            "Apps",
+            "🔄",
+            SafetyLevel::NeedsReview,
+            "Bộ cài các bản cập nhật Windows Update đã tải về.",
+            "🟡 Cần xem xét: Cần quyền Admin. Windows sẽ tải lại bản cập nhật khi cần thiết.",
+        ),
+        scan_location(
+            "windows_old",
+            "Windows.old (Bản cài cũ)",
+            "C:/Windows.old",
+            "Apps",
+            "🕰️",
+            SafetyLevel::NeedsReview,
+            "Toàn bộ bản cài đặt Windows cũ còn sót lại sau khi nâng cấp hệ điều hành (thường 20 - 50 GB).",
+            "🟡 Cần xem xét: Sau khi xóa sẽ KHÔNG thể quay về phiên bản Windows cũ. Cần quyền Admin.",
+        ),
+        scan_location(
+            "huggingface_cache",
+            "HuggingFace AI Models",
+            "~/.cache/huggingface",
+            "AI & Data",
+            "🤗",
+            SafetyLevel::NeedsReview,
+            "Trọng số model AI đã tải từ HuggingFace Hub (thường nhiều GB).",
+            "🟡 Cần xem xét: Code AI hoặc script Python sẽ cần tải lại model (qua internet) nếu bạn chạy lại tác vụ đó.",
+        ),
+        scan_location(
+            "gradle_cache",
+            "Gradle Caches",
+            "~/.gradle/caches",
+            "Developer",
+            "🐘",
+            SafetyLevel::NeedsReview,
+            "Bộ nhớ đệm build của Gradle cho các dự án Android/Java.",
+            "🟡 Cần xem xét: Lần build Android tiếp theo sẽ cần tải lại dependencies.",
+        ),
+        scan_location(
+            "nuget_cache",
+            "NuGet Package Cache",
+            "~/.nuget/packages",
+            "Developer",
+            "📦",
+            SafetyLevel::NeedsReview,
+            "Thư viện NuGet đã tải về cho các dự án .NET.",
+            "🟡 Cần xem xét: dotnet build sẽ tự tải lại gói từ nuget.org khi cần.",
+        ),
+        scan_location(
+            "docker_data",
+            "Docker Desktop Data",
+            "~/AppData/Local/Docker",
+            "Apps",
+            "🐳",
+            SafetyLevel::NeedsReview,
+            "Dữ liệu images, containers và volumes của Docker Desktop.",
+            "🟡 Cần xem xét: Xóa sẽ mất các container cục bộ và image đã build trong Docker.",
+        ),
+        scan_location(
+            "vscode_cache",
+            "VS Code Cache",
+            "~/AppData/Roaming/Code/Cache",
+            "Apps",
+            "💻",
+            SafetyLevel::NeedsReview,
+            "Bộ nhớ đệm giao diện và tệp tạm của VS Code.",
+            "🟡 Cần xem xét: Trình soạn thảo sẽ tự sinh lại cache mới, không làm mất extension hay cài đặt.",
+        ),
+        scan_location(
+            "spotify_cache",
+            "Spotify Offline Cache",
+            "~/AppData/Roaming/Spotify/Storage",
+            "Apps",
+            "🎵",
+            SafetyLevel::NeedsReview,
+            "Bộ nhớ đệm bài hát nghe gần đây hoặc tải offline trên Spotify.",
+            "🟡 Cần xem xét: Không mất tài khoản hay playlist, chỉ cần tải lại bài hát khi muốn nghe offline.",
+        ),
+        scan_location(
+            "yarn_cache",
+            "Yarn Cache",
+            "~/AppData/Local/Yarn/Cache",
+            "Developer",
+            "🧶",
+            SafetyLevel::NeedsReview,
+            "Bộ nhớ đệm gói của Yarn. Có thể tải lại qua yarn install.",
+            "🟡 Cần xem xét: Sẽ tải lại từ internet khi bạn chạy yarn install.",
+        ),
+    ]
+    .into_iter()
+    .filter(|item| item.exists && item.size > 0)
+    .collect();
+
+    let total_safe_size: u64 = safe_items.iter().map(|i| i.size).sum();
+    let total_review_size: u64 = review_items.iter().map(|i| i.size).sum();
+
+    Ok(ScanResult {
+        disk_usage,
+        safe_items,
+        review_items,
+        total_safe_size,
+        total_review_size,
+    })
+}
+
 #[tauri::command]
 async fn delete_items(paths: Vec<String>) -> Result<DeleteResult, String> {
     let mut deleted_count: u32 = 0;
@@ -714,9 +1196,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            get_platform_info,
             get_disk_usage,
             scan_system,
             scan_sub_items,
+            get_tree_root,
+            scan_large_files,
+            reveal_path,
             delete_items,
         ])
         .run(tauri::generate_context!())

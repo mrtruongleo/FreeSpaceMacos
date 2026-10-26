@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FreeSpace - macOS Storage Optimizer</title>
+    <title>FreeSpace - Disk Storage Optimizer</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
@@ -15,12 +15,22 @@
         <div class="titlebar-content" data-tauri-drag-region>
           <img src="/src/assets/app-icon.png" class="app-icon-img" alt="FreeSpace" />
           <span class="app-title">FreeSpace</span>
-          <span class="app-badge">macOS Cleaner</span>
+          <span id="app-badge" class="app-badge">macOS Cleaner</span>
         </div>
       </div>
 
       <!-- Main Content -->
       <main id="main-content">
+
+        <!-- Tab Bar -->
+        <div id="tab-bar" class="tab-bar">
+          <button class="tab-btn active" data-tab="cleanup">🧹 Dọn dẹp (Cleanup)</button>
+          <button class="tab-btn" data-tab="tree">📊 Cây thư mục (Size Tree)</button>
+          <button class="tab-btn" data-tab="files">🐣 Tệp lớn (Large Files)</button>
+        </div>
+
+        <!-- Tab: Cleanup -->
+        <div id="tab-cleanup" class="tab-panel">
 
         <!-- Disk Usage Card -->
         <section id="disk-overview" class="glass-card">
@@ -70,7 +80,7 @@
             <div class="scanner-ring">
               <div class="scanner-dot"></div>
             </div>
-            <p class="scanning-text">Đang phân tích sâu bộ nhớ Mac...</p>
+            <p id="scanning-text" class="scanning-text">Đang phân tích sâu bộ nhớ Mac...</p>
             <p id="scanning-status" class="scanning-status">Đang kiểm tra các thư mục hệ thống & cache</p>
           </div>
         </div>
@@ -129,6 +139,44 @@
             <span>🧹</span>
             <span id="btn-clean-text">Dọn dẹp các mục đã chọn</span>
           </button>
+        </div>
+
+        </div>
+        <!-- /Tab: Cleanup -->
+
+        <!-- Tab: Size Tree -->
+        <div id="tab-tree" class="tab-panel hidden">
+          <div class="glass-card tab-toolbar">
+            <div class="toolbar-left">
+              <h3 class="toolbar-title">Cây thư mục theo dung lượng (lớn → nhỏ)</h3>
+              <p id="tree-status" class="toolbar-status">Nhấn “Tải cây thư mục” để quét toàn bộ Home.</p>
+            </div>
+            <button id="btn-tree-refresh" class="btn-toolbar">🔄 Tải cây thư mục</button>
+          </div>
+          <div id="tree-container" class="tree-container"></div>
+        </div>
+
+        <!-- Tab: Large Files -->
+        <div id="tab-files" class="tab-panel hidden">
+          <div class="glass-card tab-toolbar">
+            <div class="toolbar-left">
+              <h3 class="toolbar-title">Tệp lớn nhất trong Home</h3>
+              <p id="files-status" class="toolbar-status">Chọn ngưỡng dung lượng rồi nhấn “Quét tệp lớn”.</p>
+            </div>
+            <div class="toolbar-right">
+              <label class="mini-select-label">Từ size
+                <select id="file-min-size" class="mini-select">
+                  <option value="50">50 MB</option>
+                  <option value="100" selected>100 MB</option>
+                  <option value="250">250 MB</option>
+                  <option value="500">500 MB</option>
+                  <option value="1024">1 GB</option>
+                </select>
+              </label>
+              <button id="btn-scan-files" class="btn-toolbar">🔍 Quét tệp lớn</button>
+            </div>
+          </div>
+          <div id="files-container" class="files-container"></div>
         </div>
 
       </main>

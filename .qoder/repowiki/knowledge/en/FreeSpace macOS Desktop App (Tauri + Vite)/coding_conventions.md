@@ -1,0 +1,2 @@
+- Frontend code under `src/` is written in TypeScript with strict mode enabled and no emitted JS — compilation is delegated to Vite.
+- UI markup is defined inline in `index.html` and hydrated by the TypeScript entry point rather than using a component framework.

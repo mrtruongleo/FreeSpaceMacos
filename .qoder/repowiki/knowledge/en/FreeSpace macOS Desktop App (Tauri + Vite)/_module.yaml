@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: ""
+title: FreeSpace macOS Desktop App (Tauri + Vite)
+scope:
+    - README.md
+    - .gitignore
+    - package.json
+    - package-lock.json
+    - tsconfig.json
+    - vite.config.ts
+    - index.html
+    - generate_icon.py
+    - app-icon-1024.png
+    - build_log.txt
+source_files: []
+depends_on: []
+related_to: []
