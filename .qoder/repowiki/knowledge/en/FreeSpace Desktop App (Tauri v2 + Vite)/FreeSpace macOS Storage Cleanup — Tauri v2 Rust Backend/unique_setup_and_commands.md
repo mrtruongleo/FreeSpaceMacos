@@ -1,0 +1,1 @@
+The Tauri config expects a Node.js frontend at the repo root: `npm run dev` serves the UI from port 1420 during development, and `npm run build` produces `../dist` consumed by `tauri.conf.json`'s `frontendDist`. Build/bundle is driven by Tauri's default Cargo workflow; icons for macOS, Windows, iOS, and Android live pre-baked under `src-tauri/icons/`.

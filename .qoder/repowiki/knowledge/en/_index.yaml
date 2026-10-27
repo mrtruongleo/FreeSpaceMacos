@@ -3,11 +3,11 @@ schema_version: 1
 locale: en-US
 branch: main
 nodes_managed: true
-exported_at: "2026-10-26T02:36:40Z"
+exported_at: "2026-10-26T03:25:59Z"
 modules:
     "":
-        dir_name: FreeSpace macOS Desktop App (Tauri + Vite)
-        title: FreeSpace macOS Desktop App (Tauri + Vite)
+        dir_name: FreeSpace Desktop App (Tauri v2 + Vite)
+        title: FreeSpace Desktop App (Tauri v2 + Vite)
         scope:
             - README.md
             - .gitignore
@@ -25,8 +25,8 @@ modules:
         depends_on: []
         related_to: []
     backend:
-        dir_name: FreeSpace Tauri Backend (Rust)
-        title: FreeSpace Tauri Backend (Rust)
+        dir_name: FreeSpace macOS Storage Cleanup — Tauri v2 Rust Backend
+        title: FreeSpace macOS Storage Cleanup — Tauri v2 Rust Backend
         scope:
             - src-tauri/
         source_files: []

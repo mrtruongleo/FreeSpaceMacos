@@ -1,0 +1,1 @@
+Tauri v2 desktop application wiring a TypeScript/Vite frontend to a Rust backend for scanning and deleting large files on macOS.

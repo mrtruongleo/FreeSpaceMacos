@@ -1,1 +1,0 @@
-Tauri v2 Rust backend for the FreeSpace macOS storage-cleanup desktop app, exposing commands to scan disk usage, discover cache directories, list large files, and delete selected items.

@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: backend
-title: FreeSpace Tauri Backend (Rust)
+title: FreeSpace macOS Storage Cleanup — Tauri v2 Rust Backend
 scope:
     - src-tauri/
 source_files: []

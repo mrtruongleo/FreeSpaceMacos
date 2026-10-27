@@ -8,19 +8,30 @@
 - [main.rs](file://src-tauri/src/main.rs)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Added documentation for new LargeFile struct and related functionality
+- Documented three new Tauri commands: get_tree_root, scan_large_files, reveal_path
+- Updated directory scanning section to reflect enhanced path normalization
+- Enhanced architecture diagrams to include new components
+- Added new sections for large file scanning and tree navigation features
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
+6. [Large File Scanning System](#large-file-scanning-system)
+7. [Directory Tree Navigation](#directory-tree-navigation)
+8. [Path Normalization and Cross-Platform Support](#path-normalization-and-cross-platform-support)
+9. [Dependency Analysis](#dependency-analysis)
+10. [Performance Considerations](#performance-considerations)
+11. [Troubleshooting Guide](#troubleshooting-guide)
+12. [Conclusion](#conclusion)
 
 ## Introduction
-This document describes the backend architecture of FreeSpaceMacos, a Tauri 2 application that scans and cleans storage on macOS and Windows. The Rust backend exposes commands for disk usage, scanning cleanup targets, expanding sub-items, and resilient deletion. It uses:
+This document describes the backend architecture of FreeSpaceMacos, a Tauri 2 application that scans and cleans storage on macOS and Windows. The Rust backend exposes commands for disk usage, scanning cleanup targets, expanding sub-items, large file discovery, directory tree navigation, and resilient deletion. It uses:
 - walkdir for recursive directory traversal
 - libc for macOS-specific disk statistics via statfs
 - windows-sys for Windows-specific disk statistics via GetDiskFreeSpaceExW
@@ -36,7 +47,7 @@ The system classifies cleanup targets into two safety levels: Safe and Needs Rev
 ## Project Structure
 The Rust backend is implemented as a Tauri library crate with a minimal main entry point. Key files:
 - src-tauri/src/lib.rs: Core logic, data models, platform-specific implementations, and Tauri command handlers
-- src-tauri/src/main.rs: Application bootstrap delegating to the library’s run function
+- src-tauri/src/main.rs: Application bootstrap delegating to the library's run function
 - src-tauri/Cargo.toml: Dependencies including walkdir, libc (macOS), windows-sys (Windows), serde, tauri, trash, dirs
 
 ```mermaid
@@ -47,16 +58,19 @@ B --> D["libc (macOS)<br/>statfs"]
 B --> E["windows-sys (Windows)<br/>GetDiskFreeSpaceExW"]
 B --> F["dirs<br/>Home path expansion"]
 B --> G["serde<br/>Serialization"]
+B --> H["Large File Scanner<br/>scan_large_files()"]
+B --> I["Tree Navigator<br/>get_tree_root()"]
+B --> J["Path Revealer<br/>reveal_path()"]
 ```
 
 **Diagram sources**
 - [main.rs:1-7](file://src-tauri/src/main.rs#L1-L7)
-- [lib.rs:1086-1099](file://src-tauri/src/lib.rs#L1086-L1099)
+- [lib.rs:1194-1211](file://src-tauri/src/lib.rs#L1194-L1211)
 - [Cargo.toml:15-29](file://src-tauri/Cargo.toml#L15-L29)
 
 **Section sources**
 - [main.rs:1-7](file://src-tauri/src/main.rs#L1-L7)
-- [lib.rs:1086-1099](file://src-tauri/src/lib.rs#L1086-L1099)
+- [lib.rs:1194-1211](file://src-tauri/src/lib.rs#L1194-L1211)
 - [Cargo.toml:1-29](file://src-tauri/Cargo.toml#L1-L29)
 
 ## Core Components
@@ -69,6 +83,7 @@ This section documents the core data models and their relationships.
 - DiskUsage: Aggregated disk metrics including total, used, free space, and percentage used
 - ScanResult: Aggregates disk usage plus categorized lists of safe and review items along with totals
 - DeleteResult: Reports deletion outcomes including success flag, deleted count, freed bytes, and error messages
+- LargeFile: Represents individual large files found during scanning with name, path, and size information
 
 ```mermaid
 classDiagram
@@ -119,6 +134,11 @@ class DeleteResult {
 +u64 freed_bytes
 +Vec~String~ errors
 }
+class LargeFile {
++string name
++string path
++u64 size
+}
 CleanupItem --> SubCleanupItem : "contains"
 ScanResult --> CleanupItem : "aggregates"
 ScanResult --> DiskUsage : "includes"
@@ -126,10 +146,10 @@ DeleteResult --> String : "error messages"
 ```
 
 **Diagram sources**
-- [lib.rs:8-66](file://src-tauri/src/lib.rs#L8-L66)
+- [lib.rs:8-73](file://src-tauri/src/lib.rs#L8-L73)
 
 **Section sources**
-- [lib.rs:8-66](file://src-tauri/src/lib.rs#L8-L66)
+- [lib.rs:8-73](file://src-tauri/src/lib.rs#L8-L73)
 
 ## Architecture Overview
 The backend exposes Tauri commands that the frontend can invoke:
@@ -137,6 +157,9 @@ The backend exposes Tauri commands that the frontend can invoke:
 - get_disk_usage: Retrieves disk metrics using platform-specific APIs
 - scan_system: Scans predefined locations and returns categorized cleanup items
 - scan_sub_items: Expands a given path to list its immediate children with sizes
+- get_tree_root: Returns the root node of the size-sorted directory tree (user's home folder)
+- scan_large_files: Scans the home directory for the largest individual files above a minimum size threshold
+- reveal_path: Reveals a file/folder in the native file manager (Finder / Explorer)
 - delete_items: Performs resilient deletion across multiple paths
 
 ```mermaid
@@ -146,33 +169,33 @@ participant Tauri as "Tauri Runtime"
 participant Lib as "lib.rs Commands"
 participant FS as "File System"
 participant OS as "Platform API"
-UI->>Tauri : Invoke scan_system()
-Tauri->>Lib : scan_system()
-Lib->>OS : get_disk_usage()
-OS-->>Lib : DiskUsage
-Lib->>FS : Walk directories for each location
-FS-->>Lib : Sizes and file counts
-Lib-->>Tauri : ScanResult
-Tauri-->>UI : ScanResult
-UI->>Tauri : Invoke delete_items(paths)
-Tauri->>Lib : delete_items(paths)
-Lib->>FS : Resilient deletion per path
-FS-->>Lib : Freed bytes, counts, errors
-Lib-->>Tauri : DeleteResult
-Tauri-->>UI : DeleteResult
+UI->>Tauri : Invoke get_tree_root()
+Tauri->>Lib : get_tree_root()
+Lib->>FS : Calculate home directory size
+FS-->>Lib : Size and file count
+Lib-->>Tauri : SubCleanupItem (root)
+Tauri-->>UI : Root node
+UI->>Tauri : Invoke scan_large_files(min_size_mb, limit)
+Tauri->>Lib : scan_large_files()
+Lib->>FS : Walk home directory recursively
+FS-->>Lib : Large files meeting criteria
+Lib-->>Tauri : Vec<LargeFile>
+Tauri-->>UI : Large files list
+UI->>Tauri : Invoke reveal_path(path)
+Tauri->>Lib : reveal_path()
+Lib->>OS : Platform-specific reveal command
+OS-->>Lib : Success/Failure
+Lib-->>Tauri : Result
+Tauri-->>UI : Operation result
 ```
 
 **Diagram sources**
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
-- [lib.rs:1086-1099](file://src-tauri/src/lib.rs#L1086-L1099)
+- [lib.rs:417-516](file://src-tauri/src/lib.rs#L417-L516)
+- [lib.rs:1194-1211](file://src-tauri/src/lib.rs#L1194-L1211)
 
 **Section sources**
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
-- [lib.rs:1086-1099](file://src-tauri/src/lib.rs#L1086-L1099)
+- [lib.rs:417-516](file://src-tauri/src/lib.rs#L417-L516)
+- [lib.rs:1194-1211](file://src-tauri/src/lib.rs#L1194-L1211)
 
 ## Detailed Component Analysis
 
@@ -191,10 +214,10 @@ SkipNone --> End(["Ready for Tauri IPC"])
 ```
 
 **Diagram sources**
-- [lib.rs:8-66](file://src-tauri/src/lib.rs#L8-L66)
+- [lib.rs:8-73](file://src-tauri/src/lib.rs#L8-L73)
 
 **Section sources**
-- [lib.rs:8-66](file://src-tauri/src/lib.rs#L8-L66)
+- [lib.rs:8-73](file://src-tauri/src/lib.rs#L8-L73)
 
 ### File System Operations and Traversal
 - Directory size calculation uses walkdir with a max depth limit to avoid excessive recursion
@@ -219,12 +242,11 @@ Next --> Done["Return (total_size, file_count)"]
 ```
 
 **Diagram sources**
-- [lib.rs:70-97](file://src-tauri/src/lib.rs#L70-L97)
+- [lib.rs:77-104](file://src-tauri/src/lib.rs#L77-L104)
 
 **Section sources**
-- [lib.rs:70-97](file://src-tauri/src/lib.rs#L70-L97)
-- [lib.rs:99-106](file://src-tauri/src/lib.rs#L99-L106)
-- [lib.rs:108-161](file://src-tauri/src/lib.rs#L108-L161)
+- [lib.rs:77-104](file://src-tauri/src/lib.rs#L77-L104)
+- [lib.rs:115-168](file://src-tauri/src/lib.rs#L115-L168)
 
 ### Platform-Specific Disk Usage
 - macOS: Uses libc::statfs on root path "/" to compute total, free, used, and percentage used
@@ -242,11 +264,11 @@ Compute --> Return["Return DiskUsage"]
 ```
 
 **Diagram sources**
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
+- [lib.rs:335-406](file://src-tauri/src/lib.rs#L335-L406)
 - [Cargo.toml:24-29](file://src-tauri/Cargo.toml#L24-L29)
 
 **Section sources**
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
+- [lib.rs:335-406](file://src-tauri/src/lib.rs#L335-L406)
 - [Cargo.toml:24-29](file://src-tauri/Cargo.toml#L24-L29)
 
 ### Scanning Algorithm and Categorization
@@ -272,14 +294,12 @@ Assemble --> End
 ```
 
 **Diagram sources**
-- [lib.rs:163-201](file://src-tauri/src/lib.rs#L163-L201)
-- [lib.rs:203-259](file://src-tauri/src/lib.rs#L203-L259)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
+- [lib.rs:170-208](file://src-tauri/src/lib.rs#L170-L208)
 
 **Section sources**
-- [lib.rs:163-201](file://src-tauri/src/lib.rs#L163-L201)
-- [lib.rs:203-259](file://src-tauri/src/lib.rs#L203-L259)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
+- [lib.rs:170-208](file://src-tauri/src/lib.rs#L170-L208)
+- [lib.rs:518-852](file://src-tauri/src/lib.rs#L518-L852)
+- [lib.rs:898-1162](file://src-tauri/src/lib.rs#L898-L1162)
 
 ### Resilient Deletion Mechanism
 - delete_target routes deletion based on path type:
@@ -305,12 +325,11 @@ Fallback --> ReturnFallback["Return aggregated results"]
 ```
 
 **Diagram sources**
-- [lib.rs:261-324](file://src-tauri/src/lib.rs#L261-L324)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
+- [lib.rs:268-331](file://src-tauri/src/lib.rs#L268-L331)
 
 **Section sources**
-- [lib.rs:261-324](file://src-tauri/src/lib.rs#L261-L324)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
+- [lib.rs:268-331](file://src-tauri/src/lib.rs#L268-L331)
+- [lib.rs:1164-1190](file://src-tauri/src/lib.rs#L1164-L1190)
 
 ### Safety Classification System
 - SafetyLevel enum drives UI prompts and deletion policies
@@ -330,11 +349,98 @@ Deleted --> [*]
 
 **Diagram sources**
 - [lib.rs:8-12](file://src-tauri/src/lib.rs#L8-L12)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
 
 **Section sources**
 - [lib.rs:8-12](file://src-tauri/src/lib.rs#L8-L12)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
+
+## Large File Scanning System
+
+### LargeFile Structure and Scanning Algorithm
+The LargeFile struct represents individual large files discovered during directory scanning, containing the file name, full path, and size in bytes. The scan_large_files command provides comprehensive file discovery capabilities:
+
+- **Minimum Size Filtering**: Filters files below a configurable minimum size threshold (in MB)
+- **Depth Control**: Uses a maximum depth of 24 levels to ensure thorough scanning while maintaining performance
+- **Smart Filtering**: Excludes hidden dotfiles/directories and system directories like $RECYCLE.BIN and System Volume Information
+- **Symlink Safety**: Follows links=false to prevent infinite loops and security issues
+- **Sorting and Limiting**: Results are sorted by size (largest first) and truncated to a configurable limit (default 200)
+
+```mermaid
+flowchart TD
+Start(["scan_large_files(min_size_mb, limit)"]) --> ResolveHome["Resolve home directory"]
+ResolveHome --> CalcMinBytes["Calculate min_bytes = min_size_mb * 1024 * 1024"]
+CalcMinBytes --> SetLimit["Set limit (default 200 if 0)"]
+SetLimit --> WalkHome["WalkDir.new(home).max_depth(24)"]
+WalkHome --> FilterEntries{"Filter entries"}
+FilterEntries --> |Hidden/System| Skip["Skip entry"]
+FilterEntries --> |Valid| CheckFile{"Is file?"}
+CheckFile --> |No| Next["Next entry"]
+CheckFile --> |Yes| GetSize["Get file size"]
+GetSize --> CheckSize{"size >= min_bytes?"}
+CheckSize --> |No| Next
+CheckSize --> |Yes| AddFile["Add LargeFile to results"]
+AddFile --> Next
+Next --> Sort["Sort by size (descending)"]
+Sort --> Truncate["Truncate to limit"]
+Truncate --> Return["Return Vec<LargeFile>"]
+```
+
+**Diagram sources**
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+
+**Section sources**
+- [lib.rs:68-73](file://src-tauri/src/lib.rs#L68-L73)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+
+## Directory Tree Navigation
+
+### Tree Root Discovery
+The get_tree_root command provides a hierarchical view of the user's home directory structure, enabling efficient navigation through large directory trees:
+
+- **Home Directory Resolution**: Automatically resolves the user's home directory using the dirs crate
+- **Size Calculation**: Computes total size and file count for the entire home directory
+- **Metadata Extraction**: Extracts the home directory name for display purposes
+- **Tree Node Creation**: Creates a SubCleanupItem representing the root node with all necessary metadata
+
+```mermaid
+flowchart TD
+Start(["get_tree_root()"]) --> ResolveHome["dirs::home_dir()"]
+ResolveHome --> Exists{"Home exists?"}
+Exists --> |No| Error["Return error"]
+Exists --> |Yes| CalcSize["get_dir_size(home)"]
+CalcSize --> GetName["Extract directory name"]
+GetName --> CreateNode["Create SubCleanupItem"]
+CreateNode --> Return["Return root node"]
+```
+
+**Diagram sources**
+- [lib.rs:417-436](file://src-tauri/src/lib.rs#L417-L436)
+
+**Section sources**
+- [lib.rs:417-436](file://src-tauri/src/lib.rs#L417-L436)
+
+## Path Normalization and Cross-Platform Support
+
+### Enhanced Path Handling
+The is_category_root function implements sophisticated path normalization to ensure consistent behavior across different operating systems:
+
+- **Separator Normalization**: Converts backslashes to forward slashes for cross-platform compatibility
+- **Case Insensitivity**: Converts paths to lowercase for case-insensitive matching
+- **Comprehensive Root Detection**: Supports both macOS and Windows specific paths with normalized comparison
+- **System Directory Protection**: Includes protection for critical system directories like $Recycle.Bin and Windows Temp folders
+
+```mermaid
+flowchart TD
+Start(["is_category_root(path_str)"]) --> Normalize["Normalize: replace('\\', '/') + to_lowercase()"]
+Normalize --> CheckRoots{"Check against normalized roots"}
+CheckRoots --> |Match| True["Return true (category root)"]
+CheckRoots --> |No Match| False["Return false (regular path)"]
+```
+
+**Diagram sources**
+- [lib.rs:210-266](file://src-tauri/src/lib.rs#L210-L266)
+
+**Section sources**
+- [lib.rs:210-266](file://src-tauri/src/lib.rs#L210-L266)
 
 ## Dependency Analysis
 The backend depends on:
@@ -360,20 +466,20 @@ Lib --> Ws["windows-sys (Windows)"]
 
 **Diagram sources**
 - [Cargo.toml:15-29](file://src-tauri/Cargo.toml#L15-L29)
-- [lib.rs:1086-1099](file://src-tauri/src/lib.rs#L1086-L1099)
+- [lib.rs:1194-1211](file://src-tauri/src/lib.rs#L1194-L1211)
 
 **Section sources**
 - [Cargo.toml:15-29](file://src-tauri/Cargo.toml#L15-L29)
-- [lib.rs:1086-1099](file://src-tauri/src/lib.rs#L1086-L1099)
+- [lib.rs:1194-1211](file://src-tauri/src/lib.rs#L1194-L1211)
 
 ## Performance Considerations
 - Directory size computation limits recursion depth to 10 to prevent excessive traversal overhead
+- Large file scanning uses depth limit of 24 with smart filtering to balance thoroughness and performance
 - Filtering out non-file entries during traversal reduces metadata operations
 - Sorting children by size improves UX by showing largest items first
 - Resilient deletion avoids blocking entire operation on single failures by aggregating partial results
 - Platform-specific disk stats use efficient native APIs rather than walking filesystems
-
-[No sources needed since this section provides general guidance]
+- Path normalization ensures consistent behavior across platforms without performance penalties
 
 ## Troubleshooting Guide
 Common issues and strategies:
@@ -382,17 +488,23 @@ Common issues and strategies:
   - Admin privileges may be required for certain system directories (e.g., Windows Temp, Recycle Bin)
 - Path resolution problems:
   - Ensure ~ expansion works correctly; verify home directory via dirs::home_dir
+  - Path normalization handles both forward and backward slashes for cross-platform compatibility
 - Non-existent or locked files:
   - delete_target handles missing paths gracefully and returns aggregated results
 - Disk usage retrieval failures:
   - Platform-specific calls return errors; fallback values are used to keep UI responsive
+- Large file scanning performance:
+  - Adjust min_size_mb parameter to reduce scanning time for large directories
+  - Use limit parameter to control the number of results returned
+- Tree navigation issues:
+  - Verify home directory accessibility before attempting tree operations
+  - Check for permission issues on nested directories
 
 **Section sources**
-- [lib.rs:261-324](file://src-tauri/src/lib.rs#L261-L324)
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
+- [lib.rs:268-331](file://src-tauri/src/lib.rs#L268-L331)
+- [lib.rs:335-406](file://src-tauri/src/lib.rs#L335-L406)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+- [lib.rs:1164-1190](file://src-tauri/src/lib.rs#L1164-L1190)
 
 ## Conclusion
-The FreeSpaceMacos backend provides a robust, cross-platform solution for storage analysis and cleanup. It leverages native APIs for accurate disk metrics, walkdir for efficient traversal, and a clear safety classification system to balance performance and user safety. The modular design separates concerns between data models, platform-specific logic, and Tauri command handlers, making it maintainable and extensible.
-
-[No sources needed since this section summarizes without analyzing specific files]
+The FreeSpaceMacos backend provides a robust, cross-platform solution for storage analysis and cleanup. Recent enhancements include sophisticated large file scanning capabilities, intuitive directory tree navigation, and improved cross-platform path handling. The system leverages native APIs for accurate disk metrics, walkdir for efficient traversal, and a clear safety classification system to balance performance and user safety. The modular design separates concerns between data models, platform-specific logic, and Tauri command handlers, making it maintainable and extensible. The new LargeFile struct and associated commands enable users to identify and manage large files effectively, while the tree navigation system provides an intuitive interface for exploring directory structures. Enhanced path normalization ensures consistent behavior across macOS and Windows platforms.

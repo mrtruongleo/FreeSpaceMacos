@@ -7,21 +7,31 @@
 - [README.md](file://README.md)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Added documentation for the new LargeFile struct and its role in the large files scanning feature
+- Updated Core Components section to include LargeFile
+- Added new LargeFiles Scanning Feature section with detailed analysis
+- Updated Architecture Overview to include scan_large_files command
+- Enhanced Detailed Component Analysis with LargeFile structure details
+- Updated diagrams to reflect the new data model relationships
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
+6. [LargeFiles Scanning Feature](#largefiles-scanning-feature)
+7. [Dependency Analysis](#dependency-analysis)
+8. [Performance Considerations](#performance-considerations)
+9. [Troubleshooting Guide](#troubleshooting-guide)
+10. [Conclusion](#conclusion)
 
 ## Introduction
-This document explains the Rust data models used by the FreeSpaceMacos backend to represent a hierarchical cleanup system. It focuses on CleanupItem, SubCleanupItem, ScanResult, DiskUsage, SafetyLevel, and DeleteResult. The documentation covers field purposes, serde serialization behavior, relationships between models, and how these structures support UI rendering and user workflows. It also includes examples of model instantiation patterns, JSON serialization/deserialization expectations, and usage flows across Tauri commands.
+This document explains the Rust data models used by the FreeSpaceMacos backend to represent a hierarchical cleanup system. It focuses on CleanupItem, SubCleanupItem, ScanResult, DiskUsage, SafetyLevel, DeleteResult, and the new LargeFile struct. The documentation covers field purposes, serde serialization behavior, relationships between models, and how these structures support UI rendering and user workflows. It also includes examples of model instantiation patterns, JSON serialization/deserialization expectations, and usage flows across Tauri commands.
 
-The project is a macOS storage cleanup app built with Tauri 2 (Rust + TypeScript/HTML5/CSS). The backend scans directories, computes disk usage, categorizes items by safety level, and supports deletion operations. The frontend mirrors the Rust types as TypeScript interfaces for type-safe communication.
+The project is a macOS storage cleanup app built with Tauri 2 (Rust + TypeScript/HTML5/CSS). The backend scans directories, computes disk usage, categorizes items by safety level, supports deletion operations, and provides specialized scanning for large individual files. The frontend mirrors the Rust types as TypeScript interfaces for type-safe communication.
 
 **Section sources**
 - [README.md:1-74](file://README.md#L1-L74)
@@ -41,12 +51,12 @@ FE_TS --> |"invoke() calls"| BE_LIB
 ```
 
 **Diagram sources**
-- [lib.rs:1-66](file://src-tauri/src/lib.rs#L1-L66)
-- [main.ts:3-57](file://src/main.ts#L3-L57)
+- [lib.rs:1-74](file://src-tauri/src/lib.rs#L1-L74)
+- [main.ts:3-63](file://src/main.ts#L3-L63)
 
 **Section sources**
-- [lib.rs:1-66](file://src-tauri/src/lib.rs#L1-L66)
-- [main.ts:3-57](file://src/main.ts#L3-L57)
+- [lib.rs:1-74](file://src-tauri/src/lib.rs#L1-L74)
+- [main.ts:3-63](file://src/main.ts#L3-L63)
 
 ## Core Components
 This section summarizes the core data models and their roles.
@@ -57,11 +67,12 @@ This section summarizes the core data models and their roles.
 - DiskUsage: Aggregates total, used, free space and percentage used.
 - ScanResult: Wraps disk usage plus categorized lists of safe and review items, along with totals.
 - DeleteResult: Reports deletion outcomes including success flag, counts, freed bytes, and errors.
+- LargeFile: Represents individual large files found during scanning, including name, path, and size properties for the new large files scanning feature.
 
 These models are serialized via serde and exposed through Tauri commands to the frontend.
 
 **Section sources**
-- [lib.rs:8-66](file://src-tauri/src/lib.rs#L8-L66)
+- [lib.rs:8-74](file://src-tauri/src/lib.rs#L8-L74)
 
 ## Architecture Overview
 The backend exposes several Tauri commands that operate on the data models:
@@ -69,6 +80,7 @@ The backend exposes several Tauri commands that operate on the data models:
 - get_disk_usage: Returns DiskUsage.
 - scan_system: Returns ScanResult populated with CleanupItem lists and totals.
 - scan_sub_items: Returns Vec<SubCleanupItem> for a given path.
+- scan_large_files: Returns Vec<LargeFile> for large file scanning functionality.
 - delete_items: Accepts paths and returns DeleteResult.
 
 ```mermaid
@@ -84,6 +96,10 @@ FE->>Tauri : invoke("scan_sub_items", path)
 Tauri->>Lib : scan_sub_items(path)
 Lib-->>Tauri : Vec<SubCleanupItem>
 Tauri-->>FE : Vec<SubCleanupItem>
+FE->>Tauri : invoke("scan_large_files", minSizeMb, limit)
+Tauri->>Lib : scan_large_files(minSizeMb, limit)
+Lib-->>Tauri : Vec<LargeFile>
+Tauri-->>FE : Vec<LargeFile>
 FE->>Tauri : invoke("delete_items", paths[])
 Tauri->>Lib : delete_items(paths)
 Lib-->>Tauri : DeleteResult
@@ -91,10 +107,10 @@ Tauri-->>FE : DeleteResult
 ```
 
 **Diagram sources**
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
-- [lib.rs:401-408](file://src-tauri/src/lib.rs#L401-L408)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
+- [lib.rs:335-406](file://src-tauri/src/lib.rs#L335-L406)
+- [lib.rs:408-415](file://src-tauri/src/lib.rs#L408-L415)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+- [lib.rs:1164-1190](file://src-tauri/src/lib.rs#L1164-L1190)
 
 ## Detailed Component Analysis
 
@@ -139,7 +155,7 @@ Design notes:
 
 **Section sources**
 - [lib.rs:14-25](file://src-tauri/src/lib.rs#L14-L25)
-- [lib.rs:108-161](file://src-tauri/src/lib.rs#L108-L161)
+- [lib.rs:115-168](file://src-tauri/src/lib.rs#L115-L168)
 
 ### CleanupItem
 Purpose:
@@ -172,7 +188,7 @@ Design notes:
 
 **Section sources**
 - [lib.rs:27-41](file://src-tauri/src/lib.rs#L27-L41)
-- [lib.rs:163-201](file://src-tauri/src/lib.rs#L163-L201)
+- [lib.rs:170-208](file://src-tauri/src/lib.rs#L170-L208)
 
 ### DiskUsage
 Purpose:
@@ -192,7 +208,7 @@ Usage:
 
 **Section sources**
 - [lib.rs:43-49](file://src-tauri/src/lib.rs#L43-L49)
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
+- [lib.rs:335-406](file://src-tauri/src/lib.rs#L335-L406)
 
 ### ScanResult
 Purpose:
@@ -213,7 +229,7 @@ Usage:
 
 **Section sources**
 - [lib.rs:51-58](file://src-tauri/src/lib.rs#L51-L58)
-- [lib.rs:410-744](file://src-tauri/src/lib.rs#L410-L744)
+- [lib.rs:518-1162](file://src-tauri/src/lib.rs#L518-L1162)
 
 ### DeleteResult
 Purpose:
@@ -233,13 +249,40 @@ Usage:
 
 **Section sources**
 - [lib.rs:60-66](file://src-tauri/src/lib.rs#L60-L66)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
+- [lib.rs:1164-1190](file://src-tauri/src/lib.rs#L1164-L1190)
+
+### LargeFile
+Purpose:
+- Represents individual large files discovered during the large files scanning feature, providing essential information for users to identify and manage large files consuming disk space.
+
+Key fields:
+- name: The filename of the large file.
+- path: Complete filesystem path to the file.
+- size: Size of the file in bytes.
+
+Serialization:
+- All fields are included with standard serde serialization.
+
+Relationships:
+- Used as return type for scan_large_files command.
+- Mirrored by TypeScript interface for frontend consumption.
+
+Design notes:
+- Simple structure optimized for efficient scanning and transmission of large file information.
+- Supports filtering by minimum size threshold and result limiting for performance.
+- Enables direct file reveal functionality through the existing reveal_path command.
+
+**Section sources**
+- [lib.rs:68-73](file://src-tauri/src/lib.rs#L68-L73)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+- [main.ts:59-63](file://src/main.ts#L59-L63)
 
 ### Hierarchical Cleanup System
 The hierarchy is represented as:
 - ScanResult contains two lists of CleanupItem (safe and review).
 - Each CleanupItem has a children vector of SubCleanupItem.
 - SubCleanupItem may have optional nested children for deeper exploration.
+- LargeFile operates independently as a flat list of large files found across the filesystem.
 
 ```mermaid
 classDiagram
@@ -274,6 +317,11 @@ class SubCleanupItem {
 +has_children : bool
 +children? : Option<Vec<SubCleanupItem>>
 }
+class LargeFile {
++name : String
++path : String
++size : u64
+}
 class DiskUsage {
 +total : u64
 +used : u64
@@ -289,22 +337,55 @@ ScanResult --> DiskUsage : "contains"
 ScanResult --> CleanupItem : "contains multiple"
 CleanupItem --> SubCleanupItem : "contains multiple"
 CleanupItem --> SafetyLevel : "uses"
+ScanResult --> LargeFile : "independent from"
 ```
 
 **Diagram sources**
-- [lib.rs:8-66](file://src-tauri/src/lib.rs#L8-L66)
+- [lib.rs:8-74](file://src-tauri/src/lib.rs#L8-L74)
+
+## LargeFiles Scanning Feature
+The large files scanning feature provides a specialized way to identify and manage individual large files across the user's home directory. This complements the existing cleanup system by focusing on specific large files rather than directory-based cleanup categories.
+
+### Implementation Details
+The `scan_large_files` function performs a comprehensive scan of the home directory with the following characteristics:
+
+- **Depth Limit**: Scans up to 24 levels deep to capture deeply nested large files while preventing excessive recursion.
+- **Filtering Logic**: Excludes hidden files/directories (starting with '.') and system directories like "$RECYCLE.BIN" and "System Volume Information".
+- **Size Filtering**: Only includes files larger than the specified minimum size threshold (converted from MB to bytes).
+- **Result Limiting**: Caps results to prevent overwhelming the UI with too many files (default limit of 200).
+- **Sorting**: Results are sorted by size in descending order to prioritize the largest files.
+
+### Usage Pattern
+The frontend integrates this feature through:
+
+1. **User Interface**: A dedicated tab for large file scanning with configurable minimum size thresholds.
+2. **Command Invocation**: Calls `scan_large_files` with parameters for minimum size (in MB) and result limit.
+3. **Display**: Renders results in a ranked list showing file name, directory path, size, and reveal functionality.
+4. **Integration**: Works alongside the existing cleanup system without interfering with directory-based operations.
+
+### Performance Considerations
+- Uses WalkDir with depth limits to prevent excessive filesystem traversal.
+- Implements early filtering to skip unnecessary directories and files.
+- Limits result set size to maintain responsive UI performance.
+- Leverages existing file icon detection for consistent visual presentation.
+
+**Section sources**
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+- [main.ts:1112-1182](file://src/main.ts#L1112-L1182)
 
 ## Dependency Analysis
 The data models depend on:
 - serde for serialization/deserialization.
 - std::fs and walkdir for directory traversal and size computation.
 - Platform-specific crates (libc, windows_sys) for disk usage queries.
+- dirs crate for home directory resolution in large file scanning.
 
 ```mermaid
 graph LR
 Serde["serde"] --> Models["Data Models"]
 StdFS["std::fs"] --> Helpers["Helpers"]
 WalkDir["walkdir"] --> Helpers
+Dirs["dirs"] --> LargeFileCmd["scan_large_files"]
 Libc["libc (macOS)"] --> DiskUsageCmd["get_disk_usage"]
 WinSys["windows_sys (Windows)"] --> DiskUsageCmd
 Helpers --> Models
@@ -313,21 +394,24 @@ Models --> Commands["Tauri Commands"]
 
 **Diagram sources**
 - [lib.rs:1-4](file://src-tauri/src/lib.rs#L1-L4)
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
+- [lib.rs:335-406](file://src-tauri/src/lib.rs#L335-L406)
 
 **Section sources**
 - [lib.rs:1-4](file://src-tauri/src/lib.rs#L1-L4)
-- [lib.rs:328-399](file://src-tauri/src/lib.rs#L328-L399)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
 
 ## Performance Considerations
 - Directory size calculation uses a depth limit to avoid excessive recursion and improve performance.
 - Children scanning sorts results by size to prioritize larger items in the UI.
 - Skipping empty entries reduces noise and improves responsiveness.
 - Using skip_serializing_if for optional children reduces JSON payload size when not expanded.
+- Large file scanning implements multiple optimization strategies including depth limits, filtering, and result capping.
 
 Recommendations:
 - For very large directories, consider pagination or virtualization in the UI.
 - Cache computed sizes where appropriate to avoid repeated scans.
+- Use the large files feature for targeted file management alongside the directory-based cleanup system.
 
 [No sources needed since this section provides general guidance]
 
@@ -336,16 +420,20 @@ Common issues and resolutions:
 - Path resolution: Ensure home directory expansion works correctly; invalid or non-existent paths result in zero-sized items and empty children.
 - Permission errors: Deletion may fail due to permissions; check DeleteResult.errors for details.
 - Platform differences: Disk usage APIs differ by OS; ensure correct platform detection and fallbacks.
+- Large file scanning performance: Very large filesystems may take time to scan; use appropriate minimum size thresholds to balance thoroughness with speed.
 
 Operational tips:
 - Use scan_sub_items to lazily expand directories and inspect contents before deletion.
 - Validate existence and size before presenting items to users.
+- Leverage the large files feature for identifying oversized individual files that may not fit into cleanup categories.
+- Combine both approaches: use large file scanning for specific large files and directory cleanup for systematic cache/log removal.
 
 **Section sources**
-- [lib.rs:99-106](file://src-tauri/src/lib.rs#L99-L106)
-- [lib.rs:1056-1082](file://src-tauri/src/lib.rs#L1056-L1082)
+- [lib.rs:115-168](file://src-tauri/src/lib.rs#L115-L168)
+- [lib.rs:1164-1190](file://src-tauri/src/lib.rs#L1164-L1190)
+- [lib.rs:438-481](file://src-tauri/src/lib.rs#L438-L481)
 
 ## Conclusion
-The FreeSpaceMacos backend models provide a clear, serializable representation of the cleanup system. SafetyLevel guides user interactions, while CleanupItem and SubCleanupItem form a flexible hierarchy supporting both flat and nested views. ScanResult aggregates scan outputs for UI consumption, and DeleteResult offers robust feedback for deletion operations. These design choices align with UI requirements for clarity, safety, and performance, enabling efficient scanning and controlled deletion across platforms.
+The FreeSpaceMacos backend models provide a clear, serializable representation of the cleanup system. SafetyLevel guides user interactions, while CleanupItem and SubCleanupItem form a flexible hierarchy supporting both flat and nested views. ScanResult aggregates scan outputs for UI consumption, and DeleteResult offers robust feedback for deletion operations. The new LargeFile struct extends this capability by providing specialized scanning for individual large files, complementing the directory-based cleanup approach. These design choices align with UI requirements for clarity, safety, and performance, enabling efficient scanning and controlled deletion across platforms while offering multiple strategies for reclaiming disk space.
 
 [No sources needed since this section summarizes without analyzing specific files]

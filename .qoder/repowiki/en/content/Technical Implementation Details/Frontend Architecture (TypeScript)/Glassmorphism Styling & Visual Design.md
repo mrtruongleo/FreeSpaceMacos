@@ -7,6 +7,14 @@
 - [README.md](file://README.md)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Added comprehensive documentation for new tab interface components
+- Documented toolbar layout system with flexible positioning
+- Added detailed coverage of tree view components with progress visualization
+- Included large file list item styling with reveal functionality
+- Updated component architecture diagrams to reflect new structural elements
+
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
@@ -20,7 +28,7 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document explains the glassmorphism styling system used by the FreeSpaceMacos application. It covers visual design principles (backdrop-filter effects, transparency layers, modern UI aesthetics), responsive patterns, color scheme, typography, spacing conventions, and animation/transition behaviors for interactive elements such as checkboxes, tree nodes, and modal dialogs. It also provides guidance on customizing the theme, adding new components while maintaining consistency, and handling browser compatibility with fallback strategies.
+This document explains the glassmorphism styling system used by the FreeSpaceMacos application. It covers visual design principles (backdrop-filter effects, transparency layers, modern UI aesthetics), responsive patterns, color scheme, typography, spacing conventions, and animation/transition behaviors for interactive elements such as checkboxes, tree nodes, modals, tabs, toolbars, and file lists. It also provides guidance on customizing the theme, adding new components while maintaining consistency, and handling browser compatibility with fallback strategies.
 
 The app is a macOS desktop utility built with Tauri 2 and uses vanilla CSS for its glassmorphism look and animations. The README confirms the dark mode glassmorphism design and vibrancy styling approach.
 
@@ -29,14 +37,18 @@ The app is a macOS desktop utility built with Tauri 2 and uses vanilla CSS for i
 
 ## Project Structure
 The visual layer is primarily implemented in a single stylesheet and an HTML entry point:
-- index.html defines the page structure and loads the stylesheet.
+- index.html defines the page structure with tabbed interface and loads the stylesheet.
 - styles.css contains all design tokens, layout rules, glassmorphism components, animations, and responsive adjustments.
 
 ```mermaid
 graph TB
-HTML["index.html<br/>App shell and sections"] --> CSS["styles.css<br/>Design tokens, glass cards, components, animations"]
+HTML["index.html<br/>App shell with tabbed interface"] --> CSS["styles.css<br/>Design tokens, glass cards, components, animations"]
 CSS --> Tokens["Design Tokens<br/>Colors, radius, transitions, font"]
 CSS --> Cards["Glass Card<br/>Backdrop blur + translucent background"]
+CSS --> Tabs["Tab Interface<br/>Sticky navigation with gradient backdrop"]
+CSS --> Toolbars["Toolbar Layouts<br/>Flexible control panels"]
+CSS --> TreeView["Tree View Components<br/>Hierarchical data visualization"]
+CSS --> FileList["Large File List<br/>Ranked file display with actions"]
 CSS --> Lists["Results Sections<br/>Translucent panels with borders"]
 CSS --> Controls["Buttons, Checkboxes, Tree Nodes"]
 CSS --> Overlays["Action Bar, Toasts, Dialog Overlay"]
@@ -44,12 +56,12 @@ CSS --> Anim["Keyframes & Transitions"]
 ```
 
 **Diagram sources**
-- [index.html:1-141](file://index.html#L1-L141)
-- [styles.css:1-1298](file://src/styles.css#L1-L1298)
+- [index.html:1-189](file://index.html#L1-L189)
+- [styles.css:1-1554](file://src/styles.css#L1-L1554)
 
 **Section sources**
-- [index.html:1-141](file://index.html#L1-L141)
-- [styles.css:1-1298](file://src/styles.css#L1-L1298)
+- [index.html:1-189](file://index.html#L1-L189)
+- [styles.css:1-1554](file://src/styles.css#L1-L1554)
 
 ## Core Components
 - Design tokens define colors, spacing radii, transition timings, and fonts at the root level.
@@ -57,6 +69,10 @@ CSS --> Anim["Keyframes & Transitions"]
 - Results sections use the same glass effect for grouped content.
 - Action bar and toast notifications apply glass-like overlays for contextual feedback.
 - Confirm dialog overlay uses a blurred backdrop to focus attention.
+- **New**: Tab interface provides sticky navigation with gradient backdrop and active state highlighting.
+- **New**: Toolbar layouts offer flexible control panels with title, status, and action buttons.
+- **New**: Tree view components enable hierarchical data visualization with progress bars.
+- **New**: Large file list items display ranked files with reveal functionality.
 
 Key implementation references:
 - Design tokens and base reset: [styles.css:1-58](file://src/styles.css#L1-L58)
@@ -65,6 +81,10 @@ Key implementation references:
 - Action bar: [styles.css:754-769](file://src/styles.css#L754-L769)
 - Toasts: [styles.css:827-880](file://src/styles.css#L827-L880)
 - Confirm dialog overlay and panel: [styles.css:987-1013](file://src/styles.css#L987-L1013)
+- **New**: Tab interface: [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+- **New**: Toolbar layouts: [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+- **New**: Tree view components: [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
+- **New**: Large file list items: [styles.css:1455-1554](file://src/styles.css#L1455-L1554)
 
 **Section sources**
 - [styles.css:1-58](file://src/styles.css#L1-L58)
@@ -73,6 +93,10 @@ Key implementation references:
 - [styles.css:754-769](file://src/styles.css#L754-L769)
 - [styles.css:827-880](file://src/styles.css#L827-L880)
 - [styles.css:987-1013](file://src/styles.css#L987-L1013)
+- [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+- [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+- [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
+- [styles.css:1455-1554](file://src/styles.css#L1455-L1554)
 
 ## Architecture Overview
 The visual architecture centers on a layered composition:
@@ -80,16 +104,27 @@ The visual architecture centers on a layered composition:
 - Glass panels float above the background using backdrop blur and semi-transparent fills.
 - Interactive controls (buttons, checkboxes, tree chevrons) use consistent transitions and hover states.
 - Overlays (action bar, toasts, confirm dialog) maintain visual hierarchy with z-indexing and blur.
+- **New**: Tab interface provides sticky navigation that stays visible during scrolling.
+- **New**: Toolbar layouts offer flexible control panels that adapt to different screen sizes.
+- **New**: Tree view components visualize hierarchical data with progress indicators.
+- **New**: Large file list items present ranked data with actionable elements.
 
 ```mermaid
 graph TB
 BG["Background Gradients<br/>Radial accents"] --> App["App Container"]
 App --> Titlebar["Titlebar"]
 App --> Main["Main Content"]
-Main --> DiskCard["Disk Overview Card<br/>.glass-card"]
-Main --> Results["Results Sections<br/>.results-section"]
+Main --> TabBar["Tab Bar<br/>.tab-bar (sticky)"]
+TabBar --> CleanupTab["Cleanup Tab Panel"]
+TabBar --> TreeTab["Tree Tab Panel"]
+TabBar --> FilesTab["Files Tab Panel"]
+CleanupTab --> DiskCard["Disk Overview Card<br/>.glass-card"]
+CleanupTab --> Results["Results Sections<br/>.results-section"]
 Results --> Items["Cleanup Items<br/>.cleanup-item"]
 Results --> Tree["Tree Children<br/>.tree-children"]
+TreeTab --> TreeContainer["Size Tree Container<br/>.tree-container"]
+FilesTab --> FilesContainer["Large Files Container<br/>.files-container"]
+FilesContainer --> FileRows["File Rows<br/>.lf-row"]
 Main --> ActionBar["Action Bar<br/>.action-bar"]
 Main --> Toasts["Toast Notifications<br/>.toast"]
 Main --> Dialog["Confirm Dialog<br/>.dialog-overlay + .dialog"]
@@ -104,6 +139,9 @@ Main --> Dialog["Confirm Dialog<br/>.dialog-overlay + .dialog"]
 - [styles.css:754-769](file://src/styles.css#L754-L769)
 - [styles.css:827-880](file://src/styles.css#L827-L880)
 - [styles.css:987-1013](file://src/styles.css#L987-L1013)
+- [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+- [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
+- [styles.css:1455-1554](file://src/styles.css#L1455-L1554)
 
 ## Detailed Component Analysis
 
@@ -258,6 +296,102 @@ Actions --> Close["Close dialog and dismiss overlay"]
 - [styles.css:1029-1071](file://src/styles.css#L1029-L1071)
 - [styles.css:1142-1174](file://src/styles.css#L1142-L1174)
 
+### New Interface Components
+
+#### Tab Interface
+- The tab bar provides sticky navigation that remains visible during scrolling with a gradient backdrop.
+- Active tabs receive gradient backgrounds and enhanced shadows for clear visual distinction.
+- Tab panels animate their appearance with fade-in transitions.
+
+References:
+- Tab bar and navigation: [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+
+```mermaid
+flowchart TD
+User["User clicks tab"] --> TabBtn[".tab-btn"]
+TabBtn --> ActiveState["Apply active state<br/>Gradient background + shadow"]
+ActiveState --> HideOther["Hide other tab panels"]
+HideOther --> ShowTarget["Show target tab panel<br/>Fade-in animation"]
+```
+
+**Diagram sources**
+- [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+
+**Section sources**
+- [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+
+#### Toolbar Layouts
+- Toolbar components offer flexible control panels with left-aligned titles/status and right-aligned actions.
+- Toolbar buttons maintain consistent styling with hover states and disabled states.
+- Mini-select dropdowns integrate seamlessly with the toolbar design.
+
+References:
+- Toolbar structure and styling: [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+
+```mermaid
+graph LR
+Toolbar[".tab-toolbar"] --> LeftSide["toolbar-left<br/>Title + Status"]
+Toolbar --> RightSide["toolbar-right<br/>Controls + Buttons"]
+LeftSide --> Title["toolbar-title"]
+LeftSide --> Status["toolbar-status"]
+RightSide --> Select["mini-select"]
+RightSide --> Button["btn-toolbar"]
+```
+
+**Diagram sources**
+- [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+
+**Section sources**
+- [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+
+#### Tree View Components
+- Size tree containers provide hierarchical data visualization with glass-morphism styling.
+- Progress bars indicate relative file sizes with gradient coloring.
+- Tree rows flexibly arrange icons, names, paths, and size information.
+
+References:
+- Tree container and visualization: [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
+
+```mermaid
+graph TB
+TreeContainer[".tree-container"] --> RowFlex[".tree-row-flex"]
+RowFlex --> Icon["Icon"]
+RowFlex --> Info["File info<br/>Name + Path"]
+RowFlex --> ProgressBar["Progress bar<br/>.st-bar"]
+ProgressBar --> TopBar["Top bar<br/>.st-bar.top"]
+```
+
+**Diagram sources**
+- [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
+
+**Section sources**
+- [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
+
+#### Large File List Items
+- File list rows display ranked files with consistent glass-morphism styling.
+- Each row includes rank number, icon, file information, size, and reveal button.
+- Hover states enhance interactivity with background and border changes.
+
+References:
+- File list styling and interactions: [styles.css:1455-1554](file://src/styles.css#L1455-L1554)
+
+```mermaid
+flowchart TD
+FileRow[".lf-row"] --> Rank[".lf-rank"]
+FileRow --> Icon[".lf-icon"]
+FileRow --> Info[".lf-info<br/>Name + Path"]
+FileRow --> Size[".lf-size"]
+FileRow --> Reveal[".reveal-btn"]
+Info --> Name[".lf-name"]
+Info --> Path[".lf-path"]
+```
+
+**Diagram sources**
+- [styles.css:1455-1554](file://src/styles.css#L1455-L1554)
+
+**Section sources**
+- [styles.css:1455-1554](file://src/styles.css#L1455-L1554)
+
 ### Layout and Structural Components
 - Titlebar and app icon/title layout: [styles.css:70-106](file://src/styles.css#L70-L106)
 - Main content scroll area and scrollbar styling: [styles.css:108-132](file://src/styles.css#L108-L132)
@@ -286,18 +420,20 @@ Components --> Interactions["Interactions & Animations"]
 ```
 
 **Diagram sources**
-- [index.html:1-141](file://index.html#L1-L141)
-- [styles.css:1-1298](file://src/styles.css#L1-L1298)
+- [index.html:1-189](file://index.html#L1-L189)
+- [styles.css:1-1554](file://src/styles.css#L1-L1554)
 
 **Section sources**
-- [index.html:1-141](file://index.html#L1-L141)
-- [styles.css:1-1298](file://src/styles.css#L1-L1298)
+- [index.html:1-189](file://index.html#L1-L189)
+- [styles.css:1-1554](file://src/styles.css#L1-L1554)
 
 ## Performance Considerations
 - Backdrop blur can be GPU-intensive on lower-end devices. Use it judiciously and avoid excessive nesting of blurred layers.
 - Prefer hardware-accelerated properties like transform and opacity for animations to minimize reflows.
 - Limit the number of simultaneously animated elements; staggered animations help distribute rendering load.
 - Keep blur radii moderate (e.g., 8–20px) to balance visual quality and performance.
+- **New**: Sticky tab navigation should be used sparingly as it can impact scrolling performance on large pages.
+- **New**: Complex tree hierarchies with many nested levels may benefit from virtualization techniques for better performance.
 
 [No sources needed since this section provides general guidance]
 
@@ -306,11 +442,13 @@ Components --> Interactions["Interactions & Animations"]
 - Ensure that translucent backgrounds are applied to elements directly behind the glass panels so the blur has content to render.
 - For older browsers without backdrop-filter support, consider providing solid or lightly tinted backgrounds as fallbacks.
 - If animations feel choppy, reduce the number of concurrent animations and prefer transform-based transitions.
+- **New**: If tab switching appears janky, check for excessive DOM manipulation and consider debouncing rapid clicks.
+- **New**: If tree views become unresponsive with large datasets, implement lazy loading or virtual scrolling for better performance.
 
 [No sources needed since this section provides general guidance]
 
 ## Conclusion
-The FreeSpaceMacos application employs a cohesive glassmorphism design system centered on CSS variables, backdrop blur, and translucent layers. Consistent typography, spacing, and transition tokens ensure a unified look across components. Interactive elements like checkboxes, tree nodes, and modals leverage smooth animations and clear visual states. The system is responsive and accessible, with thoughtful fallback considerations for environments where advanced CSS features are unavailable.
+The FreeSpaceMacos application employs a cohesive glassmorphism design system centered on CSS variables, backdrop blur, and translucent layers. Consistent typography, spacing, and transition tokens ensure a unified look across components. Interactive elements like checkboxes, tree nodes, modals, tabs, toolbars, and file lists leverage smooth animations and clear visual states. The system is responsive and accessible, with thoughtful fallback considerations for environments where advanced CSS features are unavailable. The addition of tab interfaces, toolbar layouts, tree view components, and large file list items demonstrates the scalability and extensibility of the design system.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
@@ -331,18 +469,29 @@ References:
 - Reuse existing glass card patterns for new panels: translucent background, border, radius, and backdrop blur.
 - Follow established spacing and typography scales from the design tokens.
 - Add hover and active states using the provided transition tokens for consistent motion.
+- **New**: For tab-based interfaces, follow the established tab bar pattern with sticky positioning and gradient backdrops.
+- **New**: For toolbar layouts, use the flexible flexbox structure with left/right alignment patterns.
+- **New**: For data visualization components, incorporate progress bars and consistent row structures.
 
 References:
 - Glass card pattern: [styles.css:134-143](file://src/styles.css#L134-L143)
 - Transition tokens: [styles.css:33-36](file://src/styles.css#L33-L36)
+- **New**: Tab interface pattern: [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+- **New**: Toolbar layout pattern: [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+- **New**: Data visualization pattern: [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
 
 **Section sources**
 - [styles.css:134-143](file://src/styles.css#L134-L143)
 - [styles.css:33-36](file://src/styles.css#L33-L36)
+- [styles.css:1299-1343](file://src/styles.css#L1299-L1343)
+- [styles.css:1345-1416](file://src/styles.css#L1345-L1416)
+- [styles.css:1418-1454](file://src/styles.css#L1418-L1454)
 
 ### Browser Compatibility and Fallback Strategies
 - Provide non-blurred fallback backgrounds for older browsers lacking backdrop-filter support.
 - Test on platforms where -webkit-backdrop-filter may behave differently and adjust vendor prefixes if necessary.
 - Validate accessibility by ensuring sufficient contrast even when blur is not applied.
+- **New**: For complex tab interfaces, consider progressive enhancement where basic navigation works without advanced CSS features.
+- **New**: For tree views and large lists, provide simplified fallbacks for mobile devices or older browsers.
 
 [No sources needed since this section provides general guidance]

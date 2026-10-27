@@ -1,0 +1,1 @@
+Tauri v2 Rust backend for the FreeSpace desktop app that scans disk usage, discovers cache directories, lists large files, and deletes selected items across macOS and Windows.

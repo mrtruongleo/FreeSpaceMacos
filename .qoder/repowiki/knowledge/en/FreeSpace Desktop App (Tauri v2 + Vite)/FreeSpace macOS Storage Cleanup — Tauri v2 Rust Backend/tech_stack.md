@@ -1,0 +1,1 @@
+Tauri v2 (`tauri` + `tauri-plugin-opener`), `walkdir` for recursive traversal, `trash` crate (declared but not used in scanned code), `dirs` for home resolution, `serde`/`serde_json` for IPC serialization, `libc` (macOS `statfs`) and `windows-sys` 0.59 (`Win32_Storage_FileSystem::GetDiskFreeSpaceExW`) for platform-specific disk queries.

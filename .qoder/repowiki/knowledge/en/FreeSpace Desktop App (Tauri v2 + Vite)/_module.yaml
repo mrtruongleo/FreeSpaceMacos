@@ -1,6 +1,6 @@
 schema_version: 1
 module_path: ""
-title: FreeSpace macOS Desktop App (Tauri + Vite)
+title: FreeSpace Desktop App (Tauri v2 + Vite)
 scope:
     - README.md
     - .gitignore

@@ -1,1 +1,0 @@
-Tauri v2 with `tauri-plugin-opener`, `walkdir` for recursive traversal, `trash` crate (declared but not used in the scanned code), `dirs` for home resolution, `serde`/`serde_json` for IPC serialization, and platform-specific bindings `libc` (macOS) and `windows-sys` (Windows).
